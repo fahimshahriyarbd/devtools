@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Hash, Copy, Download, FileUp, Save, Trash2, Search, Check, X,
-  Sparkles, Clock, FileText, CornerDownLeft, BookmarkPlus, BookmarkX,
+  Sparkles, Clock, FileText, CornerDownLeft, BookmarkPlus, BookmarkX, History,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -15,6 +15,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetHeader } from '@/components/ui/sheet';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { HASH_ALGORITHMS, computeAll, hashFile, compareHashes } from '@/lib/hash-utils';
@@ -205,159 +206,55 @@ export default function HashGeneratorPage() {
   };
 
   // ----- UI -----
+  const sidePanel = (
+    <SidePanel
+      history={history}
+      snapshots={snapshots}
+      sideSearch={sideSearch}
+      setSideSearch={setSideSearch}
+      snapTab={snapTab}
+      setSnapTab={setSnapTab}
+      clearHistory={clearHistory}
+      filteredHistory={filteredHistory}
+      filteredSnapshots={filteredSnapshots}
+      loadToInput={loadToInput}
+      saveRecent={saveRecent}
+      deleteSnapshot={deleteSnapshot}
+    />
+  );
+
   return (
-    <div className="flex h-screen">
-      {/* Left sidebar: Recent + Saved */}
+    <div className="flex h-screen min-w-0">
+      {/* Left sidebar — desktop only */}
       <aside className="hidden lg:flex flex-col w-80 shrink-0 border-r border-border/60 bg-card/30 backdrop-blur">
-        <div className="p-4 border-b border-border/60">
-          <div className="flex items-center gap-2">
-            <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-blue-500 via-cyan-500 to-emerald-500 grid place-items-center shadow-lg shadow-blue-500/20">
-              <Hash className="h-4 w-4 text-white" />
-            </div>
-            <div>
-              <div className="font-semibold leading-tight">Hash Generator</div>
-              <div className="text-[11px] text-muted-foreground">14 algorithms · persisted</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Shared search */}
-        <div className="px-3 pt-3">
-          <div className="relative">
-            <Search className="h-3.5 w-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              data-testid="side-search-input"
-              className="h-8 pl-7 text-xs"
-              placeholder="Search by text or hash…"
-              value={sideSearch}
-              onChange={(e) => setSideSearch(e.target.value)}
-            />
-          </div>
-        </div>
-
-        <Tabs value={snapTab} onValueChange={setSnapTab} className="px-3 pt-3">
-          <TabsList className="w-full grid grid-cols-2">
-            <TabsTrigger value="recent" className="text-xs" data-testid="tab-recent">
-              <Clock className="h-3 w-3 mr-1" />Recent
-              <Badge variant="secondary" className="ml-1.5 text-[9px] h-4 px-1">{history.length}</Badge>
-            </TabsTrigger>
-            <TabsTrigger value="snapshots" className="text-xs" data-testid="tab-saved">
-              <Save className="h-3 w-3 mr-1" />Saved
-              <Badge variant="secondary" className="ml-1.5 text-[9px] h-4 px-1">{snapshots.length}</Badge>
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-
-        {/* Action row */}
-        <div className="px-3 pt-2 pb-1">
-          {snapTab === 'recent' ? (
-            <Button
-              variant="outline"
-              size="sm"
-              data-testid="clear-all-recent-btn"
-              className="w-full h-8 text-xs"
-              disabled={!history.length}
-              onClick={() => { clearHistory(); toast.success('Cleared recent'); }}
-            >
-              <Trash2 className="h-3 w-3 mr-1.5" /> Clear all recent
-            </Button>
-          ) : (
-            <div className="text-[10px] text-muted-foreground px-1">
-              {filteredSnapshots.length} saved · click load to restore input
-            </div>
-          )}
-        </div>
-
-        <ScrollArea className="flex-1 px-3 pb-3">
-          {snapTab === 'recent' ? (
-            filteredHistory.length === 0 ? (
-              <EmptyHint icon={Clock} title={history.length ? 'No matches' : 'No recent yet'} subtitle={history.length ? 'Try a different search' : 'Generated hashes will appear here.'} />
-            ) : filteredHistory.slice(0, 80).map(h => (
-              <Card key={h.id} className="p-2.5 mb-1.5 glass" data-testid="recent-item">
-                <div className="flex items-center gap-1.5 mb-1">
-                  <Badge variant="secondary" className="text-[10px] font-mono">{h.label}</Badge>
-                  <span className="text-[9px] text-muted-foreground ml-auto">{new Date(h.time).toLocaleTimeString()}</span>
-                </div>
-                <div className="text-[11px] font-mono break-all text-foreground/80 line-clamp-1" title={h.value}>{h.value}</div>
-                <div className="text-[10px] text-muted-foreground truncate mt-0.5" title={h.fullInput ?? h.preview}>{h.preview || '(empty)'}</div>
-                <div className="flex items-center gap-1 mt-1.5">
-                  <Button
-                    size="sm" variant="ghost" className="h-6 px-2 text-[10px]"
-                    data-testid="recent-load-btn"
-                    onClick={() => loadToInput(h.fullInput ?? h.preview ?? '')}
-                    title="Load text into input"
-                  >
-                    <CornerDownLeft className="h-3 w-3 mr-1" />Load
-                  </Button>
-                  <Button
-                    size="sm" variant="ghost" className="h-6 px-2 text-[10px]"
-                    data-testid="recent-save-btn"
-                    onClick={() => saveRecent(h)}
-                    title="Save to snapshots"
-                  >
-                    <BookmarkPlus className="h-3 w-3 mr-1" />Save
-                  </Button>
-                  <Button
-                    size="sm" variant="ghost" className="h-6 px-2 text-[10px] ml-auto"
-                    onClick={() => { navigator.clipboard.writeText(h.value); toast.success('Copied'); }}
-                    title="Copy hash"
-                  >
-                    <Copy className="h-3 w-3" />
-                  </Button>
-                </div>
-              </Card>
-            ))
-          ) : (
-            filteredSnapshots.length === 0 ? (
-              <EmptyHint icon={Save} title={snapshots.length ? 'No matches' : 'No saved snapshots'} subtitle={snapshots.length ? 'Try a different search' : 'Ctrl+S or click Save.'} />
-            ) : filteredSnapshots.map(s => (
-              <Card key={s.id} className="p-2.5 mb-1.5 glass" data-testid="saved-item">
-                <div className="flex items-start gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs font-medium truncate" title={s.title}>{s.title}</div>
-                    <div className="text-[10px] text-muted-foreground truncate" title={s.input}>{s.input || '(empty)'}</div>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {s.hashes.slice(0, 5).map((h, i) => (
-                        <Badge key={`${h.algorithm}-${i}`} variant="outline" className="text-[9px] h-4 px-1 font-mono">{h.label}</Badge>
-                      ))}
-                      {s.hashes.length > 5 && <Badge variant="outline" className="text-[9px] h-4 px-1">+{s.hashes.length - 5}</Badge>}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 mt-1.5">
-                  <Button
-                    size="sm" variant="ghost" className="h-6 px-2 text-[10px]"
-                    data-testid="saved-load-btn"
-                    onClick={() => loadToInput(s.input)}
-                    title="Load text into input"
-                  >
-                    <CornerDownLeft className="h-3 w-3 mr-1" />Load
-                  </Button>
-                  <Button
-                    size="sm" variant="ghost" className="h-6 px-2 text-[10px]"
-                    onClick={() => { navigator.clipboard.writeText(s.hashes.map(h => `${h.label}: ${h.value}`).join('\n')); toast.success('Copied hashes'); }}
-                    title="Copy all hashes"
-                  >
-                    <Copy className="h-3 w-3 mr-1" />Copy
-                  </Button>
-                  <Button
-                    size="sm" variant="ghost" className="h-6 px-2 text-[10px] ml-auto text-rose-400 hover:text-rose-300"
-                    data-testid="saved-unsave-btn"
-                    onClick={() => { deleteSnapshot(s.id); toast('Unsaved'); }}
-                    title="Unsave"
-                  >
-                    <BookmarkX className="h-3 w-3 mr-1" />Unsave
-                  </Button>
-                </div>
-              </Card>
-            ))
-          )}
-        </ScrollArea>
+        {sidePanel}
       </aside>
 
       {/* Center */}
       <main className="flex-1 min-w-0 flex flex-col">
-        <header className="flex items-center gap-3 p-4 border-b border-border/60 bg-card/40 backdrop-blur">
+        <header className="flex flex-wrap items-center gap-2 sm:gap-3 p-3 sm:p-4 border-b border-border/60 bg-card/40 backdrop-blur">
+          {/* Mobile-only: open Recent/Saved drawer */}
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button
+                size="sm"
+                variant="outline"
+                className="lg:hidden h-9 px-2"
+                data-testid="mobile-history-btn"
+                title="Recent & Saved"
+              >
+                <History className="h-4 w-4" />
+                <span className="ml-1.5 text-xs">
+                  {history.length + snapshots.length > 0 ? history.length + snapshots.length : ''}
+                </span>
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="p-0 w-[88vw] sm:w-80 max-w-sm flex flex-col">
+              <SheetHeader className="sr-only"><SheetTitle>Recent and saved hashes</SheetTitle></SheetHeader>
+              {sidePanel}
+            </SheetContent>
+          </Sheet>
+
           <Tabs value={tab} onValueChange={setTab}>
             <TabsList>
               <TabsTrigger value="text" className="text-xs">Text</TabsTrigger>
@@ -366,9 +263,9 @@ export default function HashGeneratorPage() {
             </TabsList>
           </Tabs>
 
-          {/* Inline statistics (moved here from removed right sidebar) */}
+          {/* Inline statistics — hidden on small to save space */}
           {tab === 'text' && (
-            <div className="hidden md:flex items-center gap-3 ml-4 pl-4 border-l border-border/60 text-[11px] text-muted-foreground">
+            <div className="hidden md:flex items-center gap-3 ml-2 pl-3 border-l border-border/60 text-[11px] text-muted-foreground">
               <Stat label="Chars" value={input.length} />
               <Stat label="Lines" value={(input.match(/\n/g)?.length || 0) + (input ? 1 : 0)} />
               <Stat label="Bytes" value={new Blob([input]).size} />
@@ -378,10 +275,10 @@ export default function HashGeneratorPage() {
 
           <div className="ml-auto flex items-center gap-2">
             <Button size="sm" variant="outline" onClick={saveSnapshot} disabled={!results.length} data-testid="save-snapshot-btn">
-              <Save className="h-3.5 w-3.5 mr-1.5" />Save
+              <Save className="h-3.5 w-3.5 sm:mr-1.5" /><span className="hidden sm:inline">Save</span>
             </Button>
             <Select onValueChange={(v) => exportData(v)}>
-              <SelectTrigger className="w-[120px] h-9"><SelectValue placeholder="Export…" /></SelectTrigger>
+              <SelectTrigger className="w-[92px] sm:w-[120px] h-9"><SelectValue placeholder="Export…" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="txt">.txt</SelectItem>
                 <SelectItem value="csv">.csv</SelectItem>
@@ -392,7 +289,7 @@ export default function HashGeneratorPage() {
         </header>
 
         <ScrollArea className="flex-1">
-          <div className="p-6 space-y-4 max-w-6xl mx-auto w-full">
+          <div className="p-3 sm:p-6 space-y-4 max-w-6xl mx-auto w-full">
             {tab === 'text' && (
               <TextHashView
                 input={input} setInput={setInput}
@@ -416,6 +313,160 @@ export default function HashGeneratorPage() {
         </ScrollArea>
       </main>
     </div>
+  );
+}
+
+function SidePanel({
+  history, snapshots, sideSearch, setSideSearch, snapTab, setSnapTab,
+  clearHistory, filteredHistory, filteredSnapshots, loadToInput, saveRecent, deleteSnapshot,
+}) {
+  return (
+    <>
+      <div className="p-4 border-b border-border/60">
+        <div className="flex items-center gap-2">
+          <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-blue-500 via-cyan-500 to-emerald-500 grid place-items-center shadow-lg shadow-blue-500/20 shrink-0">
+            <Hash className="h-4 w-4 text-white" />
+          </div>
+          <div className="min-w-0">
+            <div className="font-semibold leading-tight truncate">Hash Generator</div>
+            <div className="text-[11px] text-muted-foreground">14 algorithms · persisted</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Shared search */}
+      <div className="px-3 pt-3">
+        <div className="relative">
+          <Search className="h-3.5 w-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            data-testid="side-search-input"
+            className="h-8 pl-7 text-xs"
+            placeholder="Search by text or hash…"
+            value={sideSearch}
+            onChange={(e) => setSideSearch(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <Tabs value={snapTab} onValueChange={setSnapTab} className="px-3 pt-3">
+        <TabsList className="w-full grid grid-cols-2">
+          <TabsTrigger value="recent" className="text-xs" data-testid="tab-recent">
+            <Clock className="h-3 w-3 mr-1" />Recent
+            <Badge variant="secondary" className="ml-1.5 text-[9px] h-4 px-1">{history.length}</Badge>
+          </TabsTrigger>
+          <TabsTrigger value="snapshots" className="text-xs" data-testid="tab-saved">
+            <Save className="h-3 w-3 mr-1" />Saved
+            <Badge variant="secondary" className="ml-1.5 text-[9px] h-4 px-1">{snapshots.length}</Badge>
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {/* Action row */}
+      <div className="px-3 pt-2 pb-1">
+        {snapTab === 'recent' ? (
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid="clear-all-recent-btn"
+            className="w-full h-8 text-xs"
+            disabled={!history.length}
+            onClick={() => { clearHistory(); toast.success('Cleared recent'); }}
+          >
+            <Trash2 className="h-3 w-3 mr-1.5" /> Clear all recent
+          </Button>
+        ) : (
+          <div className="text-[10px] text-muted-foreground px-1">
+            {filteredSnapshots.length} saved · click load to restore input
+          </div>
+        )}
+      </div>
+
+      <ScrollArea className="flex-1 px-3 pb-3 min-h-0">
+        {snapTab === 'recent' ? (
+          filteredHistory.length === 0 ? (
+            <EmptyHint icon={Clock} title={history.length ? 'No matches' : 'No recent yet'} subtitle={history.length ? 'Try a different search' : 'Generated hashes will appear here.'} />
+          ) : filteredHistory.slice(0, 80).map(h => (
+            <Card key={h.id} className="p-2.5 mb-1.5 glass min-w-0" data-testid="recent-item">
+              <div className="flex items-center gap-1.5 mb-1 min-w-0">
+                <Badge variant="secondary" className="text-[10px] font-mono shrink-0">{h.label}</Badge>
+                <span className="text-[9px] text-muted-foreground ml-auto shrink-0">{new Date(h.time).toLocaleTimeString()}</span>
+              </div>
+              <div className="text-[11px] font-mono break-all text-foreground/80 line-clamp-1" title={h.value}>{h.value}</div>
+              <div className="text-[10px] text-muted-foreground truncate mt-0.5" title={h.fullInput ?? h.preview}>{h.preview || '(empty)'}</div>
+              <div className="flex items-center gap-1 mt-1.5">
+                <Button
+                  size="sm" variant="ghost" className="h-6 px-2 text-[10px]"
+                  data-testid="recent-load-btn"
+                  onClick={() => loadToInput(h.fullInput ?? h.preview ?? '')}
+                  title="Load text into input"
+                >
+                  <CornerDownLeft className="h-3 w-3 mr-1" />Load
+                </Button>
+                <Button
+                  size="sm" variant="ghost" className="h-6 px-2 text-[10px]"
+                  data-testid="recent-save-btn"
+                  onClick={() => saveRecent(h)}
+                  title="Save to snapshots"
+                >
+                  <BookmarkPlus className="h-3 w-3 mr-1" />Save
+                </Button>
+                <Button
+                  size="sm" variant="ghost" className="h-6 px-2 text-[10px] ml-auto"
+                  onClick={() => { navigator.clipboard.writeText(h.value); toast.success('Copied'); }}
+                  title="Copy hash"
+                >
+                  <Copy className="h-3 w-3" />
+                </Button>
+              </div>
+            </Card>
+          ))
+        ) : (
+          filteredSnapshots.length === 0 ? (
+            <EmptyHint icon={Save} title={snapshots.length ? 'No matches' : 'No saved snapshots'} subtitle={snapshots.length ? 'Try a different search' : 'Ctrl+S or click Save.'} />
+          ) : filteredSnapshots.map(s => (
+            <Card key={s.id} className="p-2.5 mb-1.5 glass min-w-0" data-testid="saved-item">
+              <div className="flex items-start gap-2 min-w-0">
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-medium truncate" title={s.title}>{s.title}</div>
+                  <div className="text-[10px] text-muted-foreground truncate" title={s.input}>{s.input || '(empty)'}</div>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {s.hashes.slice(0, 5).map((h, i) => (
+                      <Badge key={`${h.algorithm}-${i}`} variant="outline" className="text-[9px] h-4 px-1 font-mono">{h.label}</Badge>
+                    ))}
+                    {s.hashes.length > 5 && <Badge variant="outline" className="text-[9px] h-4 px-1">+{s.hashes.length - 5}</Badge>}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 mt-1.5">
+                <Button
+                  size="sm" variant="ghost" className="h-6 px-2 text-[10px]"
+                  data-testid="saved-load-btn"
+                  onClick={() => loadToInput(s.input)}
+                  title="Load text into input"
+                >
+                  <CornerDownLeft className="h-3 w-3 mr-1" />Load
+                </Button>
+                <Button
+                  size="sm" variant="ghost" className="h-6 px-2 text-[10px]"
+                  onClick={() => { navigator.clipboard.writeText(s.hashes.map(h => `${h.label}: ${h.value}`).join('\n')); toast.success('Copied hashes'); }}
+                  title="Copy all hashes"
+                >
+                  <Copy className="h-3 w-3 mr-1" />Copy
+                </Button>
+                <Button
+                  size="sm" variant="ghost" className="h-6 px-2 text-[10px] ml-auto text-rose-400 hover:text-rose-300"
+                  data-testid="saved-unsave-btn"
+                  onClick={() => { deleteSnapshot(s.id); toast('Unsaved'); }}
+                  title="Unsave"
+                >
+                  <BookmarkX className="h-3 w-3 mr-1" />Unsave
+                </Button>
+              </div>
+            </Card>
+          ))
+        )}
+      </ScrollArea>
+    </>
   );
 }
 
@@ -460,41 +511,43 @@ function TextHashView({ input, setInput, selected, setSelected, results, busy, o
 
   return (
     <>
-      <Card className="glass p-4">
-        <div className="flex items-center justify-between mb-2">
+      <Card className="glass p-3 sm:p-4 min-w-0">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           <Label className="text-xs uppercase tracking-wider text-muted-foreground">Input</Label>
-          <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-            <span>{input.length} chars</span><span>·</span>
-            <span>{(input.match(/\n/g)?.length || 0) + (input ? 1 : 0)} lines</span><span>·</span>
-            <span>{new Blob([input]).size} B</span>
-            <Button size="sm" variant="ghost" className="h-7 ml-2" onClick={onPaste}>
-              <FileText className="h-3 w-3 mr-1" /> Paste
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+            <span className="whitespace-nowrap">{input.length} chars</span>
+            <span className="hidden sm:inline">·</span>
+            <span className="whitespace-nowrap">{(input.match(/\n/g)?.length || 0) + (input ? 1 : 0)} lines</span>
+            <span className="hidden sm:inline">·</span>
+            <span className="whitespace-nowrap">{new Blob([input]).size} B</span>
+            <Button size="sm" variant="ghost" className="h-7 px-2" onClick={onPaste}>
+              <FileText className="h-3 w-3 sm:mr-1" /><span className="hidden sm:inline">Paste</span>
             </Button>
-            <Button size="sm" variant="ghost" className="h-7" onClick={() => setInput('')}>
-              <X className="h-3 w-3 mr-1" /> Clear
+            <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setInput('')}>
+              <X className="h-3 w-3 sm:mr-1" /><span className="hidden sm:inline">Clear</span>
             </Button>
             <Button
               size="sm"
               variant="ghost"
-              className="h-7"
+              className="h-7 px-2"
               onClick={onHashEmpty}
               data-testid="hash-empty-string-btn"
               title='Hashes for the empty string "" — useful for sanity-checking known constants'
             >
-              <Hash className="h-3 w-3 mr-1" /> Hash &quot;&quot;
+              <Hash className="h-3 w-3 sm:mr-1" /><span className="hidden sm:inline">Hash &quot;&quot;</span>
             </Button>
           </div>
         </div>
         <Textarea
-          className="min-h-[140px] font-mono text-sm bg-background/40"
+          className="min-h-[140px] font-mono text-sm bg-background/40 break-all"
           placeholder="Paste or type text to hash… (Ctrl+Enter to force regenerate)"
           value={input}
           onChange={(e) => setInput(e.target.value)}
         />
       </Card>
 
-      <Card className="glass p-4">
-        <div className="flex items-center justify-between mb-3">
+      <Card className="glass p-3 sm:p-4 min-w-0">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           <Label className="text-xs uppercase tracking-wider text-muted-foreground">Algorithms</Label>
           <div className="flex gap-1">
             <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setSelected(HASH_ALGORITHMS.map(a => a.id))}>All</Button>
@@ -504,12 +557,12 @@ function TextHashView({ input, setInput, selected, setSelected, results, busy, o
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
           {HASH_ALGORITHMS.map(a => (
-            <label key={a.id} className={cn('flex items-center gap-2 p-2 rounded-md border cursor-pointer transition',
+            <label key={a.id} className={cn('flex items-center gap-2 p-2 rounded-md border cursor-pointer transition min-w-0',
               selected.includes(a.id) ? 'border-blue-500/40 bg-blue-500/10' : 'border-border/60 hover:border-foreground/20')}>
               <Checkbox checked={selected.includes(a.id)} onCheckedChange={(c) => {
                 if (c) setSelected([...selected, a.id]); else setSelected(selected.filter(x => x !== a.id));
               }} />
-              <span className="text-xs font-mono">{a.label}</span>
+              <span className="text-xs font-mono truncate">{a.label}</span>
             </label>
           ))}
         </div>
@@ -555,17 +608,20 @@ function ResultCard({ r }) {
     return <Card className="glass p-3 border-rose-500/40"><div className="text-xs text-rose-400">{r.algorithm}: {r.error}</div></Card>;
   }
   return (
-    <Card className="glass p-3 group hover:border-foreground/20 transition">
-      <div className="flex items-center gap-3">
-        <div className="flex flex-col items-center justify-center w-20 shrink-0 py-1 rounded-md bg-gradient-to-br from-blue-500/15 to-cyan-500/15 border border-blue-500/20">
-          <div className="text-[11px] font-semibold font-mono">{r.label}</div>
-          <div className="text-[9px] text-muted-foreground">{r.length} chars</div>
+    <Card className="glass p-3 group hover:border-foreground/20 transition min-w-0">
+      <div className="flex items-start sm:items-center gap-2 sm:gap-3 min-w-0">
+        <div className="flex flex-col items-center justify-center w-14 sm:w-20 shrink-0 py-1 rounded-md bg-gradient-to-br from-blue-500/15 to-cyan-500/15 border border-blue-500/20">
+          <div className="text-[10px] sm:text-[11px] font-semibold font-mono">{r.label}</div>
+          <div className="text-[9px] text-muted-foreground hidden sm:block">{r.length} chars</div>
         </div>
         <div className="flex-1 min-w-0">
-          <div className="font-mono text-[12.5px] break-all">{r.value}</div>
-          <div className="text-[10px] text-muted-foreground mt-0.5">Generated in {r.durationMs} ms</div>
+          <div className="font-mono text-[11px] sm:text-[12.5px] break-all">{r.value}</div>
+          <div className="text-[10px] text-muted-foreground mt-0.5">
+            <span className="sm:hidden">{r.length} chars · </span>
+            Generated in {r.durationMs} ms
+          </div>
         </div>
-        <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => { navigator.clipboard.writeText(r.value); toast.success(`Copied ${r.label}`); }}>
+        <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => { navigator.clipboard.writeText(r.value); toast.success(`Copied ${r.label}`); }}>
           <Copy className="h-3.5 w-3.5" />
         </Button>
       </div>
