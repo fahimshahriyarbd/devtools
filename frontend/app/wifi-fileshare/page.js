@@ -106,6 +106,7 @@ export default function WifiFileSharePage() {
     try {
       const ownName = name || 'Host';
       const res = await createRoom({ name: ownName, kind: 'file' });
+      if (!res?.room?.id) throw new Error(res?.error || 'Failed to create room');
       setRoom(res.room);
       setSelfId(res.youAre);
       setMode('in-room');
@@ -114,7 +115,7 @@ export default function WifiFileSharePage() {
       toast.success(`Room created: ${res.room.id}`);
       logActivity(`Room created: ${res.room.id}`, 'info');
     } catch (e) {
-      toast.error('Failed to create room');
+      toast.error(e.message || 'Failed to create room');
     }
   };
 
@@ -123,6 +124,7 @@ export default function WifiFileSharePage() {
     if (!code) return toast.error('Enter a room code');
     try {
       const res = await joinRoom({ roomId: code, name, expectKind: 'file' });
+      if (!res?.room?.id) throw new Error(res?.error || 'Join failed');
       setRoom(res.room);
       setSelfId(res.youAre);
       setMode('in-room');
@@ -353,7 +355,7 @@ export default function WifiFileSharePage() {
   }, [mode]);
 
   // -------- UI --------
-  if (mode === 'lobby') return (
+  if (mode === 'lobby' || !room) return (
     <LobbyView
       name={name} setName={setName}
       joinCode={joinCode} setJoinCode={setJoinCode}

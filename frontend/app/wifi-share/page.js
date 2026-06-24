@@ -90,15 +90,19 @@ export default function WifiSharePage() {
 
   const handleCreate = async () => {
     const ownName = name || 'Host';
-    const res = await createRoom({ name: ownName, kind: 'text' });
-    setRoom(res.room); setSelfId(res.youAre); setMode('in-room'); setShowQR(true);
-    wireRoom(res.room.id, res.youAre, ownName);
-    toast.success(`Room created: ${res.room.id}`);
+    try {
+      const res = await createRoom({ name: ownName, kind: 'text' });
+      if (!res?.room?.id) throw new Error(res?.error || 'Failed to create room');
+      setRoom(res.room); setSelfId(res.youAre); setMode('in-room'); setShowQR(true);
+      wireRoom(res.room.id, res.youAre, ownName);
+      toast.success(`Room created: ${res.room.id}`);
+    } catch (e) { toast.error(e.message || 'Create failed'); }
   };
   const handleJoin = async () => {
     try {
       const code = joinCode.trim();
       const res = await joinRoom({ roomId: code, name, expectKind: 'text' });
+      if (!res?.room?.id) throw new Error(res?.error || 'Join failed');
       setRoom(res.room); setSelfId(res.youAre); setMode('in-room');
       wireRoom(res.room.id, res.youAre, name);
       toast.success(`Joined ${res.room.id}`);
@@ -119,7 +123,7 @@ export default function WifiSharePage() {
     rtcRef.current?.broadcast(JSON.stringify({ kind: 'lang', language: val }));
   };
 
-  if (mode === 'lobby') return (
+  if (mode === 'lobby' || !room) return (
     <div className="min-h-screen flex items-center justify-center p-6">
       <div className="w-full max-w-3xl">
         <div className="text-center mb-8">
