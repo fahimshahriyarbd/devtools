@@ -296,8 +296,9 @@ export default function TextComparePage() {
                 diffEditorRef.current = ed;
                 const orig = ed.getOriginalEditor();
                 const mod = ed.getModifiedEditor();
-                orig.updateOptions({ scrollbar: { horizontal: 'hidden', vertical: 'visible', verticalScrollbarSize: 8 } });
-                mod.updateOptions({ scrollbar: { horizontal: 'visible', vertical: 'visible', verticalScrollbarSize: 8, horizontalScrollbarSize: 8 } });
+                const pad = { padding: { top: 12, bottom: 12 } };
+                orig.updateOptions({ ...pad, scrollbar: { horizontal: 'hidden', vertical: 'visible', verticalScrollbarSize: 8 } });
+                mod.updateOptions({ ...pad, scrollbar: { horizontal: 'visible', vertical: 'visible', verticalScrollbarSize: 8, horizontalScrollbarSize: 8 } });
                 // Force-apply wordWrap. Monaco's DiffEditor sets wordWrapOverride
                 // internally on the original editor and caches the layout. We
                 // replicate the user's "toggle off → on" so it sticks on mount.
@@ -325,6 +326,7 @@ export default function TextComparePage() {
                 minimap: { enabled: false },
                 fontSize: 13,
                 scrollBeyondLastLine: false,
+                padding: { top: 12, bottom: 12 },
                 renderMarginRevertIcon: false,
                 diffAlgorithm: 'advanced',
                 hideUnchangedRegions: { enabled: false },
