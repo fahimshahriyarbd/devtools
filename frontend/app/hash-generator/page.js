@@ -2,8 +2,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Hash, Copy, Download, FileUp, Save, Star, Trash2, Search, Check, X,
-  GitCompareArrows, Sparkles, Clock, FileText, RefreshCw, ChevronRight, ListFilter,
+  Hash, Copy, Download, FileUp, Save, Trash2, Search, Check, X,
+  Sparkles, Clock, FileText, CornerDownLeft, BookmarkPlus, BookmarkX,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -22,21 +22,19 @@ import { useHashStore } from '@/lib/stores';
 
 export default function HashGeneratorPage() {
   const {
-    input, setInput, selected, setSelected, history, addHistory, clearHistory, removeHistory,
-    snapshots, addSnapshot, renameSnapshot, deleteSnapshot, favorites, toggleFavorite,
+    input, setInput, selected, setSelected, history, addHistory, clearHistory,
+    snapshots, addSnapshot, deleteSnapshot,
   } = useHashStore();
 
   const [results, setResults] = useState([]);
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState('text');
-  const [files, setFiles] = useState([]); // [{name,size,lastModified,hashes:{algo:value}}]
+  const [files, setFiles] = useState([]);
   const [filesBusy, setFilesBusy] = useState(false);
   const [hashA, setHashA] = useState('');
   const [hashB, setHashB] = useState('');
-  const [historySearch, setHistorySearch] = useState('');
-  const [historyAlgo, setHistoryAlgo] = useState('all');
-  const [historyFavOnly, setHistoryFavOnly] = useState(false);
-  const [snapTab, setSnapTab] = useState('recent'); // recent | snapshots | favorites
+  const [sideSearch, setSideSearch] = useState('');
+  const [snapTab, setSnapTab] = useState('recent'); // recent | snapshots
   const debounceRef = useRef(null);
 
   // Auto compute on input change (debounced)
@@ -49,9 +47,10 @@ export default function HashGeneratorPage() {
       const r = await computeAll(input, selected);
       setResults(r);
       setBusy(false);
+      const fullInput = input;
       addHistory(r.filter(x => !x.error).map(x => ({
         id: crypto.randomUUID(), time: Date.now(), algo: x.algorithm, label: x.label,
-        preview: input.slice(0, 60), value: x.value, source: 'text',
+        preview: fullInput.slice(0, 60), fullInput, value: x.value, source: 'text',
       })));
     }, 350);
     return () => clearTimeout(debounceRef.current);
@@ -85,10 +84,30 @@ export default function HashGeneratorPage() {
     const title = `Snapshot ${new Date().toLocaleString()}`;
     addSnapshot({
       id: crypto.randomUUID(), title, time: Date.now(),
-      input: input.slice(0, 500),
+      input,
       hashes: results.filter(r => !r.error),
     });
     toast.success('Snapshot saved');
+  };
+
+  // Save a single recent entry as a snapshot (containing just that one hash)
+  const saveRecent = (h) => {
+    const text = h.fullInput ?? h.preview ?? '';
+    addSnapshot({
+      id: crypto.randomUUID(),
+      title: `${h.label} · ${new Date(h.time).toLocaleString()}`,
+      time: Date.now(),
+      input: text,
+      hashes: [{ algorithm: h.algo, label: h.label, value: h.value, length: h.value.length }],
+    });
+    toast.success('Saved to snapshots');
+  };
+
+  // Load a stored input back into the textarea
+  const loadToInput = (text) => {
+    setInput(text ?? '');
+    setTab('text');
+    toast.success('Loaded into input');
   };
 
   // Explicitly compute hashes for an empty string (the auto-compute effect
@@ -105,7 +124,7 @@ export default function HashGeneratorPage() {
     setBusy(false);
     addHistory(r.filter(x => !x.error).map(x => ({
       id: crypto.randomUUID(), time: Date.now(), algo: x.algorithm, label: x.label,
-      preview: '(empty string)', value: x.value, source: 'text',
+      preview: '(empty string)', fullInput: '', value: x.value, source: 'text',
     })));
     toast.success('Hashed empty string');
   };
@@ -143,16 +162,27 @@ export default function HashGeneratorPage() {
   // ----- Comparison -----
   const cmp = useMemo(() => compareHashes(hashA, hashB), [hashA, hashB]);
 
-  // ----- Filtered history -----
+  // ----- Filtered recent & saved (shared search box) -----
   const filteredHistory = useMemo(() => {
-    let h = history;
-    if (historyAlgo !== 'all') h = h.filter(x => x.algo === historyAlgo);
-    if (historySearch) {
-      const q = historySearch.toLowerCase();
-      h = h.filter(x => x.value.toLowerCase().includes(q) || x.preview.toLowerCase().includes(q));
-    }
-    return h;
-  }, [history, historyAlgo, historySearch]);
+    if (!sideSearch) return history;
+    const q = sideSearch.toLowerCase();
+    return history.filter(x =>
+      x.value.toLowerCase().includes(q) ||
+      (x.preview || '').toLowerCase().includes(q) ||
+      (x.fullInput || '').toLowerCase().includes(q) ||
+      (x.label || '').toLowerCase().includes(q)
+    );
+  }, [history, sideSearch]);
+
+  const filteredSnapshots = useMemo(() => {
+    if (!sideSearch) return snapshots;
+    const q = sideSearch.toLowerCase();
+    return snapshots.filter(s =>
+      (s.title || '').toLowerCase().includes(q) ||
+      (s.input || '').toLowerCase().includes(q) ||
+      (s.hashes || []).some(h => (h.value || '').toLowerCase().includes(q) || (h.label || '').toLowerCase().includes(q))
+    );
+  }, [snapshots, sideSearch]);
 
   // ----- Export -----
   const exportData = (format) => {
@@ -175,12 +205,10 @@ export default function HashGeneratorPage() {
   };
 
   // ----- UI -----
-  const visibleSnaps = snapTab === 'favorites' ? snapshots.filter(s => favorites.includes(s.id)) : snapshots;
-
   return (
     <div className="flex h-screen">
-      {/* Left sidebar */}
-      <aside className="hidden lg:flex flex-col w-72 shrink-0 border-r border-border/60 bg-card/30 backdrop-blur">
+      {/* Left sidebar: Recent + Saved */}
+      <aside className="hidden lg:flex flex-col w-80 shrink-0 border-r border-border/60 bg-card/30 backdrop-blur">
         <div className="p-4 border-b border-border/60">
           <div className="flex items-center gap-2">
             <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-blue-500 via-cyan-500 to-emerald-500 grid place-items-center shadow-lg shadow-blue-500/20">
@@ -192,52 +220,134 @@ export default function HashGeneratorPage() {
             </div>
           </div>
         </div>
+
+        {/* Shared search */}
+        <div className="px-3 pt-3">
+          <div className="relative">
+            <Search className="h-3.5 w-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              data-testid="side-search-input"
+              className="h-8 pl-7 text-xs"
+              placeholder="Search by text or hash…"
+              value={sideSearch}
+              onChange={(e) => setSideSearch(e.target.value)}
+            />
+          </div>
+        </div>
+
         <Tabs value={snapTab} onValueChange={setSnapTab} className="px-3 pt-3">
-          <TabsList className="w-full grid grid-cols-3">
-            <TabsTrigger value="recent" className="text-xs"><Clock className="h-3 w-3 mr-1" />Recent</TabsTrigger>
-            <TabsTrigger value="snapshots" className="text-xs"><Save className="h-3 w-3 mr-1" />Saved</TabsTrigger>
-            <TabsTrigger value="favorites" className="text-xs"><Star className="h-3 w-3 mr-1" />Faves</TabsTrigger>
+          <TabsList className="w-full grid grid-cols-2">
+            <TabsTrigger value="recent" className="text-xs" data-testid="tab-recent">
+              <Clock className="h-3 w-3 mr-1" />Recent
+              <Badge variant="secondary" className="ml-1.5 text-[9px] h-4 px-1">{history.length}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="snapshots" className="text-xs" data-testid="tab-saved">
+              <Save className="h-3 w-3 mr-1" />Saved
+              <Badge variant="secondary" className="ml-1.5 text-[9px] h-4 px-1">{snapshots.length}</Badge>
+            </TabsTrigger>
           </TabsList>
         </Tabs>
-        <ScrollArea className="flex-1 p-3">
+
+        {/* Action row */}
+        <div className="px-3 pt-2 pb-1">
           {snapTab === 'recent' ? (
-            history.length === 0 ? (
-              <EmptyHint icon={Clock} title="No history yet" subtitle="Generated hashes will appear here." />
-            ) : history.slice(0, 50).map(h => (
-              <div key={h.id} className="group flex items-start gap-2 p-2 rounded-md hover:bg-accent/50 mb-1 cursor-default">
-                <Badge variant="secondary" className="text-[10px] font-mono mt-0.5">{h.label}</Badge>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs font-mono truncate text-foreground/80">{h.value.slice(0, 24)}…</div>
-                  <div className="text-[10px] text-muted-foreground truncate">{h.preview}</div>
+            <Button
+              variant="outline"
+              size="sm"
+              data-testid="clear-all-recent-btn"
+              className="w-full h-8 text-xs"
+              disabled={!history.length}
+              onClick={() => { clearHistory(); toast.success('Cleared recent'); }}
+            >
+              <Trash2 className="h-3 w-3 mr-1.5" /> Clear all recent
+            </Button>
+          ) : (
+            <div className="text-[10px] text-muted-foreground px-1">
+              {filteredSnapshots.length} saved · click load to restore input
+            </div>
+          )}
+        </div>
+
+        <ScrollArea className="flex-1 px-3 pb-3">
+          {snapTab === 'recent' ? (
+            filteredHistory.length === 0 ? (
+              <EmptyHint icon={Clock} title={history.length ? 'No matches' : 'No recent yet'} subtitle={history.length ? 'Try a different search' : 'Generated hashes will appear here.'} />
+            ) : filteredHistory.slice(0, 80).map(h => (
+              <Card key={h.id} className="p-2.5 mb-1.5 glass" data-testid="recent-item">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Badge variant="secondary" className="text-[10px] font-mono">{h.label}</Badge>
+                  <span className="text-[9px] text-muted-foreground ml-auto">{new Date(h.time).toLocaleTimeString()}</span>
                 </div>
-                <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100" onClick={() => { navigator.clipboard.writeText(h.value); toast.success('Copied'); }}>
-                  <Copy className="h-3 w-3" />
-                </Button>
-              </div>
+                <div className="text-[11px] font-mono break-all text-foreground/80 line-clamp-1" title={h.value}>{h.value}</div>
+                <div className="text-[10px] text-muted-foreground truncate mt-0.5" title={h.fullInput ?? h.preview}>{h.preview || '(empty)'}</div>
+                <div className="flex items-center gap-1 mt-1.5">
+                  <Button
+                    size="sm" variant="ghost" className="h-6 px-2 text-[10px]"
+                    data-testid="recent-load-btn"
+                    onClick={() => loadToInput(h.fullInput ?? h.preview ?? '')}
+                    title="Load text into input"
+                  >
+                    <CornerDownLeft className="h-3 w-3 mr-1" />Load
+                  </Button>
+                  <Button
+                    size="sm" variant="ghost" className="h-6 px-2 text-[10px]"
+                    data-testid="recent-save-btn"
+                    onClick={() => saveRecent(h)}
+                    title="Save to snapshots"
+                  >
+                    <BookmarkPlus className="h-3 w-3 mr-1" />Save
+                  </Button>
+                  <Button
+                    size="sm" variant="ghost" className="h-6 px-2 text-[10px] ml-auto"
+                    onClick={() => { navigator.clipboard.writeText(h.value); toast.success('Copied'); }}
+                    title="Copy hash"
+                  >
+                    <Copy className="h-3 w-3" />
+                  </Button>
+                </div>
+              </Card>
             ))
           ) : (
-            visibleSnaps.length === 0 ? (
-              <EmptyHint icon={Save} title="No snapshots" subtitle="Ctrl+S or click Save Snapshot." />
-            ) : visibleSnaps.map(s => (
-              <Card key={s.id} className="p-3 mb-2 glass">
+            filteredSnapshots.length === 0 ? (
+              <EmptyHint icon={Save} title={snapshots.length ? 'No matches' : 'No saved snapshots'} subtitle={snapshots.length ? 'Try a different search' : 'Ctrl+S or click Save.'} />
+            ) : filteredSnapshots.map(s => (
+              <Card key={s.id} className="p-2.5 mb-1.5 glass" data-testid="saved-item">
                 <div className="flex items-start gap-2">
-                  <button onClick={() => toggleFavorite(s.id)}>
-                    <Star className={cn('h-3.5 w-3.5', favorites.includes(s.id) ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground')} />
-                  </button>
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs font-medium truncate">{s.title}</div>
-                    <div className="text-[10px] text-muted-foreground truncate">{s.input}</div>
+                    <div className="text-xs font-medium truncate" title={s.title}>{s.title}</div>
+                    <div className="text-[10px] text-muted-foreground truncate" title={s.input}>{s.input || '(empty)'}</div>
                     <div className="mt-1 flex flex-wrap gap-1">
-                      {s.hashes.slice(0, 4).map(h => <Badge key={h.algorithm} variant="outline" className="text-[9px] h-4 px-1 font-mono">{h.label}</Badge>)}
-                      {s.hashes.length > 4 && <Badge variant="outline" className="text-[9px] h-4 px-1">+{s.hashes.length - 4}</Badge>}
+                      {s.hashes.slice(0, 5).map((h, i) => (
+                        <Badge key={`${h.algorithm}-${i}`} variant="outline" className="text-[9px] h-4 px-1 font-mono">{h.label}</Badge>
+                      ))}
+                      {s.hashes.length > 5 && <Badge variant="outline" className="text-[9px] h-4 px-1">+{s.hashes.length - 5}</Badge>}
                     </div>
                   </div>
-                  <button onClick={() => { setInput(s.input); toast.success('Restored input'); }} title="Restore">
-                    <RefreshCw className="h-3 w-3 text-muted-foreground hover:text-foreground" />
-                  </button>
-                  <button onClick={() => { deleteSnapshot(s.id); toast('Deleted'); }} title="Delete">
-                    <Trash2 className="h-3 w-3 text-muted-foreground hover:text-rose-400" />
-                  </button>
+                </div>
+                <div className="flex items-center gap-1 mt-1.5">
+                  <Button
+                    size="sm" variant="ghost" className="h-6 px-2 text-[10px]"
+                    data-testid="saved-load-btn"
+                    onClick={() => loadToInput(s.input)}
+                    title="Load text into input"
+                  >
+                    <CornerDownLeft className="h-3 w-3 mr-1" />Load
+                  </Button>
+                  <Button
+                    size="sm" variant="ghost" className="h-6 px-2 text-[10px]"
+                    onClick={() => { navigator.clipboard.writeText(s.hashes.map(h => `${h.label}: ${h.value}`).join('\n')); toast.success('Copied hashes'); }}
+                    title="Copy all hashes"
+                  >
+                    <Copy className="h-3 w-3 mr-1" />Copy
+                  </Button>
+                  <Button
+                    size="sm" variant="ghost" className="h-6 px-2 text-[10px] ml-auto text-rose-400 hover:text-rose-300"
+                    data-testid="saved-unsave-btn"
+                    onClick={() => { deleteSnapshot(s.id); toast('Unsaved'); }}
+                    title="Unsave"
+                  >
+                    <BookmarkX className="h-3 w-3 mr-1" />Unsave
+                  </Button>
                 </div>
               </Card>
             ))
@@ -248,15 +358,28 @@ export default function HashGeneratorPage() {
       {/* Center */}
       <main className="flex-1 min-w-0 flex flex-col">
         <header className="flex items-center gap-3 p-4 border-b border-border/60 bg-card/40 backdrop-blur">
-          <Tabs value={tab} onValueChange={setTab} className="">
+          <Tabs value={tab} onValueChange={setTab}>
             <TabsList>
               <TabsTrigger value="text" className="text-xs">Text</TabsTrigger>
               <TabsTrigger value="file" className="text-xs">Files</TabsTrigger>
               <TabsTrigger value="compare" className="text-xs">Compare</TabsTrigger>
             </TabsList>
           </Tabs>
+
+          {/* Inline statistics (moved here from removed right sidebar) */}
+          {tab === 'text' && (
+            <div className="hidden md:flex items-center gap-3 ml-4 pl-4 border-l border-border/60 text-[11px] text-muted-foreground">
+              <Stat label="Chars" value={input.length} />
+              <Stat label="Lines" value={(input.match(/\n/g)?.length || 0) + (input ? 1 : 0)} />
+              <Stat label="Bytes" value={new Blob([input]).size} />
+              <Stat label="Hashes" value={results.filter(r => !r.error).length} />
+            </div>
+          )}
+
           <div className="ml-auto flex items-center gap-2">
-            <Button size="sm" variant="outline" onClick={saveSnapshot} disabled={!results.length}><Save className="h-3.5 w-3.5 mr-1.5" />Save</Button>
+            <Button size="sm" variant="outline" onClick={saveSnapshot} disabled={!results.length} data-testid="save-snapshot-btn">
+              <Save className="h-3.5 w-3.5 mr-1.5" />Save
+            </Button>
             <Select onValueChange={(v) => exportData(v)}>
               <SelectTrigger className="w-[120px] h-9"><SelectValue placeholder="Export…" /></SelectTrigger>
               <SelectContent>
@@ -269,7 +392,7 @@ export default function HashGeneratorPage() {
         </header>
 
         <ScrollArea className="flex-1">
-          <div className="p-4 space-y-4 max-w-5xl mx-auto w-full">
+          <div className="p-6 space-y-4 max-w-6xl mx-auto w-full">
             {tab === 'text' && (
               <TextHashView
                 input={input} setInput={setInput}
@@ -292,62 +415,15 @@ export default function HashGeneratorPage() {
           </div>
         </ScrollArea>
       </main>
+    </div>
+  );
+}
 
-      {/* Right sidebar */}
-      <aside className="hidden xl:flex flex-col w-80 shrink-0 border-l border-border/60 bg-card/30 backdrop-blur">
-        <div className="p-4 border-b border-border/60">
-          <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">Statistics</div>
-          <StatGrid items={[
-            { label: 'Characters', value: input.length },
-            { label: 'Lines', value: (input.match(/\n/g)?.length || 0) + (input ? 1 : 0) },
-            { label: 'Bytes', value: new Blob([input]).size },
-            { label: 'Hashes', value: results.filter(r => !r.error).length },
-          ]} />
-        </div>
-        <div className="p-4 border-b border-border/60">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="text-[11px] uppercase tracking-wider text-muted-foreground">History</div>
-            <Badge variant="secondary" className="text-[9px] h-4">{history.length}</Badge>
-            <Button variant="ghost" size="icon" className="h-6 w-6 ml-auto" onClick={() => clearHistory()}>
-              <Trash2 className="h-3 w-3" />
-            </Button>
-          </div>
-          <div className="space-y-2">
-            <div className="relative">
-              <Search className="h-3.5 w-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <Input className="h-8 pl-7 text-xs" placeholder="Search history…" value={historySearch} onChange={(e) => setHistorySearch(e.target.value)} />
-            </div>
-            <Select value={historyAlgo} onValueChange={setHistoryAlgo}>
-              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All algorithms</SelectItem>
-                {HASH_ALGORITHMS.map(a => <SelectItem key={a.id} value={a.id}>{a.label}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <ScrollArea className="flex-1 p-3">
-          {filteredHistory.length === 0 ? (
-            <EmptyHint icon={Clock} title="No matching entries" />
-          ) : filteredHistory.slice(0, 80).map(h => (
-            <div key={h.id} className="group flex items-start gap-2 p-2 rounded-md hover:bg-accent/50 mb-1">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5 mb-0.5">
-                  <Badge variant="outline" className="text-[9px] h-4 px-1 font-mono">{h.label}</Badge>
-                  <span className="text-[9px] text-muted-foreground">{new Date(h.time).toLocaleTimeString()}</span>
-                </div>
-                <div className="text-[11px] font-mono truncate text-foreground/80">{h.value}</div>
-              </div>
-              <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100" onClick={() => { navigator.clipboard.writeText(h.value); toast.success('Copied'); }}>
-                <Copy className="h-3 w-3" />
-              </Button>
-              <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100" onClick={() => removeHistory(h.id)}>
-                <X className="h-3 w-3" />
-              </Button>
-            </div>
-          ))}
-        </ScrollArea>
-      </aside>
+function Stat({ label, value }) {
+  return (
+    <div className="flex items-baseline gap-1">
+      <span className="font-mono font-semibold text-foreground/90">{typeof value === 'number' ? value.toLocaleString() : value}</span>
+      <span className="uppercase tracking-wider text-[9px]">{label}</span>
     </div>
   );
 }
@@ -363,14 +439,13 @@ function EmptyHint({ icon: Icon, title, subtitle }) {
 }
 
 function StatGrid({ items }) {
+  // Kept for backwards compatibility; new inline Stat is used in the header.
   return (
     <div className="grid grid-cols-2 gap-2">
       {items.map((it, i) => (
         <div key={i} className="rounded-lg bg-card/50 border border-border/60 px-3 py-2">
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{it.label}</div>
-          <motion.div key={it.value} initial={{ y: 5, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="font-mono text-lg font-semibold">
-            {typeof it.value === 'number' ? it.value.toLocaleString() : it.value}
-          </motion.div>
+          <div className="font-mono text-lg font-semibold">{typeof it.value === 'number' ? it.value.toLocaleString() : it.value}</div>
         </div>
       ))}
     </div>
