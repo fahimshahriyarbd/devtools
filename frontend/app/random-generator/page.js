@@ -407,9 +407,28 @@ function ResultsView({ results, view, collections, activeColl, setActiveColl, ad
       </Card>
     );
   }
+  const targetColl = collections.find(c => c.id === activeColl);
+  const saveOne = (v) => {
+    if (!activeColl) { toast.error('Pick a collection in "Save to…" first'); return; }
+    addToCollection(activeColl, v);
+    toast.success(`Saved to ${targetColl?.name || 'collection'}`);
+  };
+
   if (view === 'table') {
     return (
       <Card className="glass overflow-hidden">
+        <div className="px-3 py-2 flex items-center gap-2 border-b border-border/60 bg-card/40">
+          <span className="text-xs text-muted-foreground">{results.length} result{results.length === 1 ? '' : 's'}</span>
+          <Button size="sm" variant="ghost" className="h-7 ml-auto" onClick={() => { navigator.clipboard.writeText(results.join('\n')); toast.success(`Copied all ${results.length}`); }}>
+            <Copy className="h-3 w-3 mr-1.5" /> Copy all
+          </Button>
+          <Select value={activeColl || ''} onValueChange={setActiveColl}>
+            <SelectTrigger className="h-7 w-[160px] text-xs" data-testid="save-target-select"><SelectValue placeholder="Save to…" /></SelectTrigger>
+            <SelectContent>
+              {collections.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
         <div className="max-h-[60vh] overflow-auto">
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-card/80 backdrop-blur">
@@ -417,7 +436,7 @@ function ResultsView({ results, view, collections, activeColl, setActiveColl, ad
                 <th className="px-3 py-2 w-12">#</th>
                 <th className="px-3 py-2">Value</th>
                 <th className="px-3 py-2 w-20 text-right">Length</th>
-                <th className="px-3 py-2 w-12"></th>
+                <th className="px-3 py-2 w-24"></th>
               </tr>
             </thead>
             <tbody>
@@ -426,7 +445,21 @@ function ResultsView({ results, view, collections, activeColl, setActiveColl, ad
                   <td className="px-3 py-1.5 text-xs text-muted-foreground font-mono">{i + 1}</td>
                   <td className="px-3 py-1.5 font-mono text-xs break-all">{v}</td>
                   <td className="px-3 py-1.5 text-xs text-right text-muted-foreground">{v.length}</td>
-                  <td className="px-3 py-1.5"><Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { navigator.clipboard.writeText(v); toast.success('Copied'); }}><Copy className="h-3 w-3" /></Button></td>
+                  <td className="px-3 py-1.5">
+                    <div className="flex items-center gap-1 justify-end">
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { navigator.clipboard.writeText(v); toast.success('Copied'); }} title="Copy">
+                        <Copy className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        size="icon" variant="ghost" className="h-6 w-6"
+                        data-testid="result-save-btn"
+                        onClick={() => saveOne(v)}
+                        title={activeColl ? `Save to ${targetColl?.name}` : 'Pick a collection first'}
+                      >
+                        <Save className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -443,18 +476,11 @@ function ResultsView({ results, view, collections, activeColl, setActiveColl, ad
           <Copy className="h-3 w-3 mr-1.5" /> Copy all
         </Button>
         <Select value={activeColl || ''} onValueChange={setActiveColl}>
-          <SelectTrigger className="h-7 w-[140px] text-xs"><SelectValue placeholder="Save to…" /></SelectTrigger>
+          <SelectTrigger className="h-7 w-[160px] text-xs" data-testid="save-target-select"><SelectValue placeholder="Save to…" /></SelectTrigger>
           <SelectContent>
             {collections.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Button size="sm" variant="outline" className="h-7" disabled={!activeColl} onClick={() => {
-          if (!activeColl) return;
-          for (const v of results) addToCollection(activeColl, v);
-          toast.success(`Added ${results.length} to collection`);
-        }}>
-          <Save className="h-3 w-3 mr-1.5" /> Save batch
-        </Button>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
         <AnimatePresence>
@@ -464,9 +490,19 @@ function ResultsView({ results, view, collections, activeColl, setActiveColl, ad
                 <div className="font-mono text-[12.5px] break-all">{v}</div>
                 <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
                   <span>#{i + 1} · {v.length} chars</span>
-                  <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { navigator.clipboard.writeText(v); toast.success('Copied'); }}>
-                    <Copy className="h-3 w-3" />
-                  </Button>
+                  <div className="flex items-center gap-0.5">
+                    <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { navigator.clipboard.writeText(v); toast.success('Copied'); }} title="Copy">
+                      <Copy className="h-3 w-3" />
+                    </Button>
+                    <Button
+                      size="icon" variant="ghost" className="h-6 w-6"
+                      data-testid="result-save-btn"
+                      onClick={() => saveOne(v)}
+                      title={activeColl ? `Save to ${targetColl?.name}` : 'Pick a collection first'}
+                    >
+                      <Save className="h-3 w-3" />
+                    </Button>
+                  </div>
                 </div>
               </Card>
             </motion.div>
