@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Dice5, Copy, Download, Save, Star, Trash2, Search, Check, X, Zap,
   Key, Hash as HashIcon, Fingerprint, Shield, Ticket, ChevronRight, Plus, FolderOpen, Pencil, Clock,
+  PanelLeft, PanelRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -17,6 +18,7 @@ import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
+import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetHeader } from '@/components/ui/sheet';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { GENERATOR_TYPES, generateMany, generateOne, analyzeStrength } from '@/lib/random-utils';
@@ -104,81 +106,58 @@ export default function RandomGeneratorPage() {
   };
 
   return (
-    <div className="flex h-screen">
-      {/* Left sidebar */}
+    <div className="flex h-screen min-w-0">
+      {/* Left sidebar — desktop */}
       <aside className="hidden lg:flex flex-col w-72 shrink-0 border-r border-border/60 bg-card/30 backdrop-blur">
-        <div className="p-4 border-b border-border/60">
-          <div className="flex items-center gap-2">
-            <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-fuchsia-500 via-purple-500 to-indigo-500 grid place-items-center shadow-lg shadow-fuchsia-500/20">
-              <Dice5 className="h-4 w-4 text-white" />
-            </div>
-            <div>
-              <div className="font-semibold leading-tight">Random Generator</div>
-              <div className="text-[11px] text-muted-foreground">20 types · cryptographic</div>
-            </div>
-          </div>
-        </div>
-        <div className="p-3 border-b border-border/60">
-          <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">Quick actions</div>
-          <div className="grid grid-cols-2 gap-1.5">
-            {QUICK_ACTIONS.map(qa => {
-              const Icon = qa.icon;
-              return (
-                <button
-                  key={qa.id}
-                  className="flex flex-col items-start gap-1 p-2 rounded-md bg-card/40 border border-border/60 hover:border-foreground/30 transition group"
-                  onClick={() => {
-                    setType(qa.id);
-                    const v = generateOne(qa.id, options);
-                    setLastResults([v]);
-                    addHistory([{ id: crypto.randomUUID(), time: Date.now(), type: qa.id, value: v, length: v.length }]);
-                    navigator.clipboard.writeText(v);
-                    toast.success(`Generated & copied ${qa.label}`);
-                  }}
-                >
-                  <Icon className="h-3.5 w-3.5 text-fuchsia-400" />
-                  <span className="text-[11px]">{qa.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-        <Tabs defaultValue="collections" className="flex-1 flex flex-col min-h-0">
-          <TabsList className="mx-3 mt-3 grid grid-cols-2">
-            <TabsTrigger value="collections" className="text-xs">Collections</TabsTrigger>
-            <TabsTrigger value="recent" className="text-xs">Recent</TabsTrigger>
-          </TabsList>
-          <TabsContent value="collections" className="flex-1 mt-0 min-h-0">
-            <CollectionsPanel
-              collections={collections}
-              active={activeColl} setActive={setActiveColl}
-              addCollection={addCollection} renameCollection={renameCollection} deleteCollection={deleteCollection}
-              removeFromCollection={removeFromCollection}
-              newCollName={newCollName} setNewCollName={setNewCollName}
-            />
-          </TabsContent>
-          <TabsContent value="recent" className="flex-1 mt-0 min-h-0">
-            <ScrollArea className="h-full px-3 pb-3">
-              {history.slice(0, 40).map(h => (
-                <div key={h.id} className="group flex items-start gap-2 p-2 rounded-md hover:bg-accent/50 mb-1">
-                  <Badge variant="outline" className="text-[9px] h-4 px-1 mt-0.5 font-mono">{h.type}</Badge>
-                  <div className="text-[11px] font-mono truncate flex-1">{h.value}</div>
-                  <button onClick={() => { navigator.clipboard.writeText(h.value); toast.success('Copied'); }}><Copy className="h-3 w-3 text-muted-foreground hover:text-foreground" /></button>
-                </div>
-              ))}
-              {!history.length && <div className="text-center text-xs text-muted-foreground py-8">No history yet</div>}
-            </ScrollArea>
-          </TabsContent>
-        </Tabs>
+        <LeftPanel
+          options={options}
+          setType={setType}
+          setLastResults={setLastResults}
+          addHistory={addHistory}
+          history={history}
+          collections={collections}
+          activeColl={activeColl} setActiveColl={setActiveColl}
+          addCollection={addCollection} renameCollection={renameCollection} deleteCollection={deleteCollection}
+          removeFromCollection={removeFromCollection}
+          newCollName={newCollName} setNewCollName={setNewCollName}
+        />
       </aside>
 
       {/* Center */}
       <Tabs value={Object.values({}).length ? 'a' : 'a'} className="flex-1 min-w-0 flex flex-col">
         <main className="flex-1 min-w-0 flex flex-col">
-          <header className="flex items-center gap-3 p-4 border-b border-border/60 bg-card/40 backdrop-blur">
-            <div className="flex items-center gap-2">
+          <header className="flex flex-wrap items-center gap-2 sm:gap-3 p-3 sm:p-4 border-b border-border/60 bg-card/40 backdrop-blur">
+            {/* Mobile left drawer */}
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button
+                  size="sm" variant="outline" className="lg:hidden h-9 px-2"
+                  data-testid="mobile-left-panel-btn"
+                  title="Quick actions, collections, recent"
+                >
+                  <PanelLeft className="h-4 w-4" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="p-0 w-[88vw] sm:w-80 max-w-sm flex flex-col">
+                <SheetHeader className="sr-only"><SheetTitle>Quick actions & collections</SheetTitle></SheetHeader>
+                <LeftPanel
+                  options={options}
+                  setType={setType}
+                  setLastResults={setLastResults}
+                  addHistory={addHistory}
+                  history={history}
+                  collections={collections}
+                  activeColl={activeColl} setActiveColl={setActiveColl}
+                  addCollection={addCollection} renameCollection={renameCollection} deleteCollection={deleteCollection}
+                  removeFromCollection={removeFromCollection}
+                  newCollName={newCollName} setNewCollName={setNewCollName}
+                />
+              </SheetContent>
+            </Sheet>
+
+            <div className="flex items-center gap-2 min-w-0">
               <Select value={type} onValueChange={setType}>
-                <SelectTrigger className="w-[220px] h-9"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="w-[150px] sm:w-[220px] h-9"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {Object.entries(
                     GENERATOR_TYPES.reduce((acc, t) => { (acc[t.category] = acc[t.category] || []).push(t); return acc; }, {})
@@ -190,7 +169,7 @@ export default function RandomGeneratorPage() {
                   ))}
                 </SelectContent>
               </Select>
-              <Badge variant="secondary" className="text-[10px]">{typeMeta.category}</Badge>
+              <Badge variant="secondary" className="text-[10px] hidden sm:inline-flex">{typeMeta.category}</Badge>
             </div>
             <div className="ml-auto flex items-center gap-2">
               <Tabs value={view} onValueChange={setView}>
@@ -200,7 +179,7 @@ export default function RandomGeneratorPage() {
                 </TabsList>
               </Tabs>
               <Select onValueChange={(v) => exportData(v)}>
-                <SelectTrigger className="w-[120px] h-9"><SelectValue placeholder="Export…" /></SelectTrigger>
+                <SelectTrigger className="w-[92px] sm:w-[120px] h-9"><SelectValue placeholder="Export…" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="txt">.txt</SelectItem>
                   <SelectItem value="csv">.csv</SelectItem>
@@ -208,13 +187,41 @@ export default function RandomGeneratorPage() {
                 </SelectContent>
               </Select>
               <Button onClick={generate} className="bg-gradient-to-r from-fuchsia-500 to-purple-500 hover:from-fuchsia-600 hover:to-purple-600">
-                <Zap className="h-4 w-4 mr-1.5" /> Generate
+                <Zap className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Generate</span>
               </Button>
+
+              {/* Mobile right drawer */}
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button
+                    size="sm" variant="outline" className="xl:hidden h-9 px-2"
+                    data-testid="mobile-right-panel-btn"
+                    title="Strength, stats, history"
+                  >
+                    <PanelRight className="h-4 w-4" />
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="right" className="p-0 w-[88vw] sm:w-80 max-w-sm flex flex-col">
+                  <SheetHeader className="sr-only"><SheetTitle>Strength, stats, history</SheetTitle></SheetHeader>
+                  <RightPanel
+                    stats={stats}
+                    uniqueRatio={uniqueRatio}
+                    history={history}
+                    clearHistory={clearHistory}
+                    historySearch={historySearch} setHistorySearch={setHistorySearch}
+                    historyType={historyType} setHistoryType={setHistoryType}
+                    historyFavOnly={historyFavOnly} setHistoryFavOnly={setHistoryFavOnly}
+                    filteredHistory={filteredHistory}
+                    toggleHistoryFav={toggleHistoryFav}
+                    removeHistory={removeHistory}
+                  />
+                </SheetContent>
+              </Sheet>
             </div>
           </header>
 
           <ScrollArea className="flex-1">
-            <div className="p-4 space-y-4 max-w-5xl mx-auto w-full">
+            <div className="p-3 sm:p-4 space-y-4 max-w-5xl mx-auto w-full">
               <OptionsCard type={type} options={options} setOptions={setOptions} count={count} setCount={setCount} />
               <ResultsView results={lastResults} view={view} collections={collections} activeColl={activeColl} setActiveColl={setActiveColl} addToCollection={addToCollection} />
             </div>
@@ -222,70 +229,169 @@ export default function RandomGeneratorPage() {
         </main>
       </Tabs>
 
-      {/* Right sidebar */}
+      {/* Right sidebar — desktop */}
       <aside className="hidden xl:flex flex-col w-80 shrink-0 border-l border-border/60 bg-card/30 backdrop-blur">
-        <div className="p-4 border-b border-border/60">
-          <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-3">Strength</div>
-          <StrengthMeter stats={stats} />
-        </div>
-        <div className="p-4 border-b border-border/60 grid grid-cols-2 gap-2">
-          <Stat label="Length" value={stats.length} />
-          <Stat label="Entropy" value={`${stats.entropy} bits`} />
-          <Stat label="Unique chars" value={stats.unique || 0} />
-          <Stat label="Batch unique" value={`${uniqueRatio}%`} />
-        </div>
-        <div className="p-4 border-b border-border/60">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="text-[11px] uppercase tracking-wider text-muted-foreground">History</div>
-            <Badge variant="secondary" className="text-[9px] h-4">{history.length}</Badge>
-            <Button variant="ghost" size="icon" className="h-6 w-6 ml-auto" onClick={() => clearHistory()}>
-              <Trash2 className="h-3 w-3" />
-            </Button>
-          </div>
-          <div className="space-y-2">
-            <div className="relative">
-              <Search className="h-3.5 w-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <Input className="h-8 pl-7 text-xs" placeholder="Search history…" value={historySearch} onChange={(e) => setHistorySearch(e.target.value)} />
-            </div>
-            <div className="flex gap-2">
-              <Select value={historyType} onValueChange={setHistoryType}>
-                <SelectTrigger className="h-8 text-xs flex-1"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All types</SelectItem>
-                  {GENERATOR_TYPES.map(t => <SelectItem key={t.id} value={t.id}>{t.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <button onClick={() => setHistoryFavOnly(v => !v)} className={cn('h-8 w-8 rounded-md border grid place-items-center', historyFavOnly ? 'bg-amber-500/15 border-amber-500/40' : 'border-border/60')}>
-                <Star className={cn('h-3.5 w-3.5', historyFavOnly ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground')} />
-              </button>
-            </div>
-          </div>
-        </div>
-        <ScrollArea className="flex-1 p-3">
-          {filteredHistory.slice(0, 100).map(h => (
-            <div key={h.id} className="group flex items-start gap-2 p-2 rounded-md hover:bg-accent/50 mb-1">
-              <button onClick={() => toggleHistoryFav(h.id)}>
-                <Star className={cn('h-3 w-3 mt-0.5', h.favorite ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground')} />
-              </button>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5 mb-0.5">
-                  <Badge variant="outline" className="text-[9px] h-4 px-1 font-mono">{h.type}</Badge>
-                  <span className="text-[9px] text-muted-foreground">{new Date(h.time).toLocaleTimeString()}</span>
-                </div>
-                <div className="text-[11px] font-mono truncate">{h.value}</div>
-              </div>
-              <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100" onClick={() => { navigator.clipboard.writeText(h.value); toast.success('Copied'); }}>
-                <Copy className="h-3 w-3" />
-              </Button>
-              <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100" onClick={() => removeHistory(h.id)}>
-                <X className="h-3 w-3" />
-              </Button>
-            </div>
-          ))}
-          {!filteredHistory.length && <div className="text-center text-xs text-muted-foreground py-8">No matches</div>}
-        </ScrollArea>
+        <RightPanel
+          stats={stats}
+          uniqueRatio={uniqueRatio}
+          history={history}
+          clearHistory={clearHistory}
+          historySearch={historySearch} setHistorySearch={setHistorySearch}
+          historyType={historyType} setHistoryType={setHistoryType}
+          historyFavOnly={historyFavOnly} setHistoryFavOnly={setHistoryFavOnly}
+          filteredHistory={filteredHistory}
+          toggleHistoryFav={toggleHistoryFav}
+          removeHistory={removeHistory}
+        />
       </aside>
     </div>
+  );
+}
+
+function LeftPanel({
+  options, setType, setLastResults, addHistory,
+  history, collections, activeColl, setActiveColl,
+  addCollection, renameCollection, deleteCollection, removeFromCollection,
+  newCollName, setNewCollName,
+}) {
+  return (
+    <>
+      <div className="p-4 border-b border-border/60">
+        <div className="flex items-center gap-2">
+          <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-fuchsia-500 via-purple-500 to-indigo-500 grid place-items-center shadow-lg shadow-fuchsia-500/20 shrink-0">
+            <Dice5 className="h-4 w-4 text-white" />
+          </div>
+          <div className="min-w-0">
+            <div className="font-semibold leading-tight truncate">Random Generator</div>
+            <div className="text-[11px] text-muted-foreground">20 types · cryptographic</div>
+          </div>
+        </div>
+      </div>
+      <div className="p-3 border-b border-border/60">
+        <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">Quick actions</div>
+        <div className="grid grid-cols-2 gap-1.5">
+          {QUICK_ACTIONS.map(qa => {
+            const Icon = qa.icon;
+            return (
+              <button
+                key={qa.id}
+                className="flex flex-col items-start gap-1 p-2 rounded-md bg-card/40 border border-border/60 hover:border-foreground/30 transition group"
+                onClick={() => {
+                  setType(qa.id);
+                  const v = generateOne(qa.id, options);
+                  setLastResults([v]);
+                  addHistory([{ id: crypto.randomUUID(), time: Date.now(), type: qa.id, value: v, length: v.length }]);
+                  navigator.clipboard.writeText(v);
+                  toast.success(`Generated & copied ${qa.label}`);
+                }}
+              >
+                <Icon className="h-3.5 w-3.5 text-fuchsia-400" />
+                <span className="text-[11px]">{qa.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <Tabs defaultValue="collections" className="flex-1 flex flex-col min-h-0">
+        <TabsList className="mx-3 mt-3 grid grid-cols-2">
+          <TabsTrigger value="collections" className="text-xs">Collections</TabsTrigger>
+          <TabsTrigger value="recent" className="text-xs">Recent</TabsTrigger>
+        </TabsList>
+        <TabsContent value="collections" className="flex-1 mt-0 min-h-0">
+          <CollectionsPanel
+            collections={collections}
+            active={activeColl} setActive={setActiveColl}
+            addCollection={addCollection} renameCollection={renameCollection} deleteCollection={deleteCollection}
+            removeFromCollection={removeFromCollection}
+            newCollName={newCollName} setNewCollName={setNewCollName}
+          />
+        </TabsContent>
+        <TabsContent value="recent" className="flex-1 mt-0 min-h-0">
+          <ScrollArea className="h-full px-3 pb-3">
+            {history.slice(0, 40).map(h => (
+              <div key={h.id} className="group flex items-start gap-2 p-2 rounded-md hover:bg-accent/50 mb-1 min-w-0">
+                <Badge variant="outline" className="text-[9px] h-4 px-1 mt-0.5 font-mono shrink-0">{h.type}</Badge>
+                <div className="text-[11px] font-mono truncate flex-1 min-w-0">{h.value}</div>
+                <button onClick={() => { navigator.clipboard.writeText(h.value); toast.success('Copied'); }}><Copy className="h-3 w-3 text-muted-foreground hover:text-foreground" /></button>
+              </div>
+            ))}
+            {!history.length && <div className="text-center text-xs text-muted-foreground py-8">No history yet</div>}
+          </ScrollArea>
+        </TabsContent>
+      </Tabs>
+    </>
+  );
+}
+
+function RightPanel({
+  stats, uniqueRatio, history, clearHistory,
+  historySearch, setHistorySearch, historyType, setHistoryType,
+  historyFavOnly, setHistoryFavOnly,
+  filteredHistory, toggleHistoryFav, removeHistory,
+}) {
+  return (
+    <>
+      <div className="p-4 border-b border-border/60">
+        <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-3">Strength</div>
+        <StrengthMeter stats={stats} />
+      </div>
+      <div className="p-4 border-b border-border/60 grid grid-cols-2 gap-2">
+        <Stat label="Length" value={stats.length} />
+        <Stat label="Entropy" value={`${stats.entropy} bits`} />
+        <Stat label="Unique chars" value={stats.unique || 0} />
+        <Stat label="Batch unique" value={`${uniqueRatio}%`} />
+      </div>
+      <div className="p-4 border-b border-border/60">
+        <div className="flex items-center gap-2 mb-2">
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">History</div>
+          <Badge variant="secondary" className="text-[9px] h-4">{history.length}</Badge>
+          <Button variant="ghost" size="icon" className="h-6 w-6 ml-auto" onClick={() => clearHistory()}>
+            <Trash2 className="h-3 w-3" />
+          </Button>
+        </div>
+        <div className="space-y-2">
+          <div className="relative">
+            <Search className="h-3.5 w-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Input className="h-8 pl-7 text-xs" placeholder="Search history…" value={historySearch} onChange={(e) => setHistorySearch(e.target.value)} />
+          </div>
+          <div className="flex gap-2">
+            <Select value={historyType} onValueChange={setHistoryType}>
+              <SelectTrigger className="h-8 text-xs flex-1"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All types</SelectItem>
+                {GENERATOR_TYPES.map(t => <SelectItem key={t.id} value={t.id}>{t.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <button onClick={() => setHistoryFavOnly(v => !v)} className={cn('h-8 w-8 rounded-md border grid place-items-center shrink-0', historyFavOnly ? 'bg-amber-500/15 border-amber-500/40' : 'border-border/60')}>
+              <Star className={cn('h-3.5 w-3.5', historyFavOnly ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground')} />
+            </button>
+          </div>
+        </div>
+      </div>
+      <ScrollArea className="flex-1 p-3 min-h-0">
+        {filteredHistory.slice(0, 100).map(h => (
+          <div key={h.id} className="group flex items-start gap-2 p-2 rounded-md hover:bg-accent/50 mb-1 min-w-0">
+            <button onClick={() => toggleHistoryFav(h.id)} className="shrink-0">
+              <Star className={cn('h-3 w-3 mt-0.5', h.favorite ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground')} />
+            </button>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <Badge variant="outline" className="text-[9px] h-4 px-1 font-mono">{h.type}</Badge>
+                <span className="text-[9px] text-muted-foreground">{new Date(h.time).toLocaleTimeString()}</span>
+              </div>
+              <div className="text-[11px] font-mono truncate">{h.value}</div>
+            </div>
+            <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => { navigator.clipboard.writeText(h.value); toast.success('Copied'); }}>
+              <Copy className="h-3 w-3" />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => removeHistory(h.id)}>
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
+        ))}
+        {!filteredHistory.length && <div className="text-center text-xs text-muted-foreground py-8">No matches</div>}
+      </ScrollArea>
+    </>
   );
 }
 
@@ -331,9 +437,9 @@ function OptionsCard({ type, options, setOptions, count, setCount }) {
   const supportsPrefix = ['password', 'string', 'api-key'].includes(type);
 
   return (
-    <Card className="glass p-4">
+    <Card className="glass p-3 sm:p-4 min-w-0">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <div className="space-y-4">
+        <div className="space-y-4 min-w-0">
           {supportsLength && (
             <div>
               <div className="flex justify-between mb-1.5">
@@ -348,9 +454,9 @@ function OptionsCard({ type, options, setOptions, count, setCount }) {
               <Label className="text-xs">Count</Label>
               <span className="text-xs font-mono">{count}</span>
             </div>
-            <div className="flex gap-1.5">
+            <div className="flex flex-wrap gap-1.5">
               {[1, 10, 50, 100, 500, 1000].map(n => (
-                <button key={n} onClick={() => setCount(n)} className={cn('flex-1 h-8 rounded-md text-xs border transition',
+                <button key={n} onClick={() => setCount(n)} className={cn('flex-1 min-w-[44px] h-8 rounded-md text-xs border transition px-2',
                   count === n ? 'bg-fuchsia-500/15 border-fuchsia-500/40 text-fuchsia-200' : 'border-border/60 hover:border-foreground/30')}>{n}</button>
               ))}
             </div>
