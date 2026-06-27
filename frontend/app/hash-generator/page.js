@@ -23,7 +23,7 @@ import { useHashStore } from '@/lib/stores';
 
 export default function HashGeneratorPage() {
   const {
-    input, setInput, selected, setSelected, history, addHistory, clearHistory,
+    input, setInput, selected, setSelected, history, addHistory, clearHistory, removeHistory,
     snapshots, addSnapshot, deleteSnapshot,
   } = useHashStore();
 
@@ -215,6 +215,7 @@ export default function HashGeneratorPage() {
       snapTab={snapTab}
       setSnapTab={setSnapTab}
       clearHistory={clearHistory}
+      removeHistory={removeHistory}
       filteredHistory={filteredHistory}
       filteredSnapshots={filteredSnapshots}
       loadToInput={loadToInput}
@@ -318,7 +319,8 @@ export default function HashGeneratorPage() {
 
 function SidePanel({
   history, snapshots, sideSearch, setSideSearch, snapTab, setSnapTab,
-  clearHistory, filteredHistory, filteredSnapshots, loadToInput, saveRecent, deleteSnapshot,
+  clearHistory, removeHistory, filteredHistory, filteredSnapshots,
+  loadToInput, saveRecent, deleteSnapshot,
 }) {
   return (
     <>
@@ -416,6 +418,14 @@ function SidePanel({
                   title="Copy hash"
                 >
                   <Copy className="h-3 w-3" />
+                </Button>
+                <Button
+                  size="sm" variant="ghost" className="h-6 px-2 text-[10px] text-rose-400 hover:text-rose-300"
+                  data-testid="recent-delete-btn"
+                  onClick={() => { removeHistory(h.id); toast('Removed'); }}
+                  title="Delete this entry"
+                >
+                  <Trash2 className="h-3 w-3" />
                 </Button>
               </div>
             </Card>

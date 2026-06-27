@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetHeader } from '@/components/ui/sheet';
 import { Wifi, Plus, LogIn, Copy, QrCode, X, CheckCircle2, Loader2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTheme } from 'next-themes';
@@ -167,21 +168,50 @@ export default function WifiSharePage() {
 
   return (
     <div className="flex flex-col h-screen">
-      <header className="flex flex-wrap items-center gap-3 p-4 border-b border-border/60 bg-card/40 backdrop-blur">
-        <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-emerald-500 to-cyan-500 grid place-items-center">
+      <header className="flex flex-wrap items-center gap-2 sm:gap-3 p-3 sm:p-4 border-b border-border/60 bg-card/40 backdrop-blur">
+        <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-emerald-500 to-cyan-500 grid place-items-center shrink-0">
           <Wifi className="h-4 w-4 text-white" />
         </div>
-        <div>
-          <div className="font-semibold flex items-center gap-2">WiFi Text Share <Badge variant="secondary" className="font-mono text-[11px]">{room.id}</Badge></div>
+        <div className="min-w-0">
+          <div className="font-semibold flex items-center gap-2"><span className="hidden sm:inline">WiFi Text Share</span><span className="sm:hidden">Text</span> <Badge variant="secondary" className="font-mono text-[11px]">{room.id}</Badge></div>
           <div className="text-[11px] text-muted-foreground flex items-center gap-1"><Users className="h-3 w-3" /> {peers.length + 1} online</div>
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-1 sm:gap-2">
           <Select value={language} onValueChange={onLangChange}>
-            <SelectTrigger className="h-9 w-32"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-9 w-24 sm:w-32"><SelectValue /></SelectTrigger>
             <SelectContent>{LANGS.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}</SelectContent>
           </Select>
-          <Button size="sm" variant="outline" onClick={() => setShowQR(true)}><QrCode className="h-3.5 w-3.5 mr-1" />Invite</Button>
-          <Button size="sm" variant="ghost" onClick={leave}><X className="h-3.5 w-3.5 mr-1" />Leave</Button>
+          <Button size="sm" variant="outline" onClick={() => setShowQR(true)} className="h-9 px-2 sm:px-3"><QrCode className="h-3.5 w-3.5 sm:mr-1" /><span className="hidden sm:inline">Invite</span></Button>
+
+          {/* Mobile participants drawer (the desktop right sidebar is hidden < lg) */}
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button
+                size="sm" variant="outline"
+                className="lg:hidden h-9 px-2"
+                data-testid="wifi-share-participants-btn"
+                title="Participants"
+              >
+                <Users className="h-3.5 w-3.5" />
+                <span className="ml-1 text-xs">{peers.length + 1}</span>
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="right" className="p-0 w-[88vw] sm:w-72 max-w-sm flex flex-col">
+              <SheetHeader className="sr-only"><SheetTitle>Participants</SheetTitle></SheetHeader>
+              <div className="p-4 border-b border-border/60">
+                <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Participants</div>
+              </div>
+              <div className="flex-1 overflow-y-auto p-3 space-y-1">
+                <Person name={name} self />
+                {peers.map(p => {
+                  const ready = rtcRef.current?.peers.get(p.id)?.ready;
+                  return <Person key={p.id} name={p.name} ready={ready} />;
+                })}
+              </div>
+            </SheetContent>
+          </Sheet>
+
+          <Button size="sm" variant="ghost" onClick={leave} className="h-9 px-2 sm:px-3"><X className="h-3.5 w-3.5 sm:mr-1" /><span className="hidden sm:inline">Leave</span></Button>
         </div>
       </header>
 

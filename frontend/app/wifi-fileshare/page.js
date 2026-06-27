@@ -6,7 +6,8 @@ import { QRCodeCanvas } from 'qrcode.react';
 import {
   Share2, Upload, Plus, LogIn, Copy, QrCode, Users, HardDrive, X,
   Download, FileText, FileImage, FileArchive, FileCode, Film, Music,
-  File as FileIcon, Wifi, WifiOff, CheckCircle2, Loader2, Send, Trash2, Activity
+  File as FileIcon, Wifi, WifiOff, CheckCircle2, Loader2, Send, Trash2, Activity,
+  ListChecks, Menu,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -18,6 +19,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetHeader } from '@/components/ui/sheet';
 import { toast } from 'sonner';
 import { WebRTCRoom, createRoom, joinRoom } from '@/lib/webrtc-room';
 import { cn } from '@/lib/utils';
@@ -363,49 +365,33 @@ export default function WifiFileSharePage() {
     />
   );
 
+  const leftPanel = (
+    <LeftRoomPanel
+      room={room}
+      name={name}
+      peers={peers}
+      rtcRef={rtcRef}
+      files={files}
+      transfers={transfers}
+      onShowQR={() => setShowQR(true)}
+      onUpload={() => fileInputRef.current?.click()}
+    />
+  );
+  const rightPanel = (
+    <RightRoomPanel transfers={transfers} activity={activity} />
+  );
+
   return (
     <div className="flex flex-col h-screen overflow-hidden">
-      <RoomHeader room={room} selfId={selfId} peers={peers} onLeave={leaveRoom} onShowQR={() => setShowQR(true)} />
+      <RoomHeader
+        room={room} selfId={selfId} peers={peers}
+        onLeave={leaveRoom} onShowQR={() => setShowQR(true)}
+        leftPanel={leftPanel} rightPanel={rightPanel}
+      />
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[280px_1fr_320px]">
-        {/* Left panel */}
+        {/* Left panel — desktop */}
         <aside className="hidden lg:flex flex-col border-r border-border/60 bg-card/30 backdrop-blur">
-          <div className="p-4 space-y-4 overflow-y-auto scrollbar-thin">
-            <Card className="glass p-4">
-              <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">Room</div>
-              <div className="font-mono text-sm font-semibold">{room.id}</div>
-              <div className="mt-2 flex gap-2">
-                <Button size="sm" variant="outline" className="flex-1" onClick={() => { navigator.clipboard.writeText(room.id); toast.success('Code copied'); }}>
-                  <Copy className="h-3.5 w-3.5 mr-1" /> Copy
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setShowQR(true)}>
-                  <QrCode className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </Card>
-            <Card className="glass p-4">
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Devices</div>
-                <Badge variant="secondary" className="text-[10px]">{peers.length + 1}</Badge>
-              </div>
-              <DeviceRow self name={name} />
-              {peers.map(p => {
-                const rtc = rtcRef.current?.peers.get(p.id);
-                return <DeviceRow key={p.id} name={p.name} ready={rtc?.ready} />;
-              })}
-            </Card>
-            <Card className="glass p-4">
-              <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5">
-                <HardDrive className="h-3.5 w-3.5" /> Stats
-              </div>
-              <StatRow label="Files" value={files.length} />
-              <StatRow label="Total" value={fmtBytes(files.reduce((s,f) => s + (f.size || 0), 0))} />
-              <StatRow label="Active transfers" value={transfers.filter(t => !t.done).length} />
-            </Card>
-            <Button onClick={() => fileInputRef.current?.click()} className="w-full bg-gradient-to-r from-blue-500 to-violet-500 hover:from-blue-600 hover:to-violet-600">
-              <Upload className="h-4 w-4 mr-2" /> Upload files
-            </Button>
-            <div className="text-[10px] text-center text-muted-foreground">Ctrl/⌘ + U to upload</div>
-          </div>
+          {leftPanel}
         </aside>
 
         {/* Center */}
@@ -452,36 +438,9 @@ export default function WifiFileSharePage() {
           </ScrollArea>
         </section>
 
-        {/* Right */}
+        {/* Right — desktop */}
         <aside className="hidden lg:flex flex-col border-l border-border/60 bg-card/30 backdrop-blur">
-          <Tabs defaultValue="transfers" className="flex flex-col flex-1 min-h-0">
-            <TabsList className="m-3 grid grid-cols-2">
-              <TabsTrigger value="transfers" className="text-xs">Transfers</TabsTrigger>
-              <TabsTrigger value="activity" className="text-xs">Activity</TabsTrigger>
-            </TabsList>
-            <TabsContent value="transfers" className="flex-1 min-h-0 mt-0">
-              <ScrollArea className="h-full px-3 pb-3">
-                {transfers.length === 0 ? (
-                  <div className="text-xs text-muted-foreground p-3 text-center">No transfers yet</div>
-                ) : transfers.slice().reverse().map(t => <TransferRow key={t.id} t={t} />)}
-              </ScrollArea>
-            </TabsContent>
-            <TabsContent value="activity" className="flex-1 min-h-0 mt-0">
-              <ScrollArea className="h-full px-3 pb-3">
-                {activity.length === 0 ? (
-                  <div className="text-xs text-muted-foreground p-3 text-center">No activity yet</div>
-                ) : activity.map(a => (
-                  <div key={a.id} className="flex items-start gap-2 py-1.5 text-xs">
-                    <Activity className="h-3 w-3 mt-0.5 text-muted-foreground shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <div className="truncate">{a.text}</div>
-                      <div className="text-[10px] text-muted-foreground">{new Date(a.time).toLocaleTimeString()}</div>
-                    </div>
-                  </div>
-                ))}
-              </ScrollArea>
-            </TabsContent>
-          </Tabs>
+          {rightPanel}
         </aside>
       </div>
 
@@ -578,26 +537,126 @@ function LobbyView({ name, setName, joinCode, setJoinCode, onCreate, onJoin }) {
   );
 }
 
-function RoomHeader({ room, peers, onLeave, onShowQR }) {
+function RoomHeader({ room, peers, onLeave, onShowQR, leftPanel, rightPanel }) {
   return (
-    <header className="flex items-center gap-3 p-4 border-b border-border/60 bg-card/40 backdrop-blur">
-      <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-blue-500 via-violet-500 to-fuchsia-500 grid place-items-center">
+    <header className="flex flex-wrap items-center gap-2 sm:gap-3 p-3 sm:p-4 border-b border-border/60 bg-card/40 backdrop-blur">
+      <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-blue-500 via-violet-500 to-fuchsia-500 grid place-items-center shrink-0">
         <Share2 className="h-4 w-4 text-white" />
       </div>
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          <span className="font-semibold">WiFi File Share</span>
+          <span className="font-semibold"><span className="hidden sm:inline">WiFi File Share</span><span className="sm:hidden">Files</span></span>
           <Badge variant="secondary" className="font-mono text-[11px]">{room.id}</Badge>
         </div>
         <div className="text-[11px] text-muted-foreground flex items-center gap-2">
           <Wifi className="h-3 w-3 text-emerald-400" /> Live · {peers.length + 1} device{peers.length === 0 ? '' : 's'}
         </div>
       </div>
-      <div className="ml-auto flex items-center gap-2">
-        <Button size="sm" variant="outline" onClick={onShowQR}><QrCode className="h-3.5 w-3.5 mr-1.5" /> Invite</Button>
-        <Button size="sm" variant="ghost" onClick={onLeave}><X className="h-3.5 w-3.5 mr-1" /> Leave</Button>
+      <div className="ml-auto flex items-center gap-1 sm:gap-2">
+        {/* Mobile-only drawers — kept together so they share the same row */}
+        <div className="flex items-center gap-1 lg:hidden">
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button size="sm" variant="outline" className="h-9 px-2" data-testid="wifi-fileshare-left-btn" title="Room, devices, stats">
+                <Menu className="h-4 w-4" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="p-0 w-[88vw] sm:w-80 max-w-sm flex flex-col">
+              <SheetHeader className="sr-only"><SheetTitle>Room & devices</SheetTitle></SheetHeader>
+              {leftPanel}
+            </SheetContent>
+          </Sheet>
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button size="sm" variant="outline" className="h-9 px-2" data-testid="wifi-fileshare-right-btn" title="Transfers & activity">
+                <ListChecks className="h-4 w-4" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="right" className="p-0 w-[88vw] sm:w-80 max-w-sm flex flex-col">
+              <SheetHeader className="sr-only"><SheetTitle>Transfers & activity</SheetTitle></SheetHeader>
+              {rightPanel}
+            </SheetContent>
+          </Sheet>
+        </div>
+        <Button size="sm" variant="outline" onClick={onShowQR} className="h-9 px-2 sm:px-3"><QrCode className="h-3.5 w-3.5 sm:mr-1.5" /><span className="hidden sm:inline">Invite</span></Button>
+        <Button size="sm" variant="ghost" onClick={onLeave} className="h-9 px-2 sm:px-3"><X className="h-3.5 w-3.5 sm:mr-1" /><span className="hidden sm:inline">Leave</span></Button>
       </div>
     </header>
+  );
+}
+
+function LeftRoomPanel({ room, name, peers, rtcRef, files, transfers, onShowQR, onUpload }) {
+  return (
+    <div className="p-4 space-y-4 overflow-y-auto scrollbar-thin">
+      <Card className="glass p-4">
+        <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">Room</div>
+        <div className="font-mono text-sm font-semibold">{room.id}</div>
+        <div className="mt-2 flex gap-2">
+          <Button size="sm" variant="outline" className="flex-1" onClick={() => { navigator.clipboard.writeText(room.id); toast.success('Code copied'); }}>
+            <Copy className="h-3.5 w-3.5 mr-1" /> Copy
+          </Button>
+          <Button size="sm" variant="outline" onClick={onShowQR}>
+            <QrCode className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </Card>
+      <Card className="glass p-4">
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Devices</div>
+          <Badge variant="secondary" className="text-[10px]">{peers.length + 1}</Badge>
+        </div>
+        <DeviceRow self name={name} />
+        {peers.map(p => {
+          const rtc = rtcRef.current?.peers.get(p.id);
+          return <DeviceRow key={p.id} name={p.name} ready={rtc?.ready} />;
+        })}
+      </Card>
+      <Card className="glass p-4">
+        <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5">
+          <HardDrive className="h-3.5 w-3.5" /> Stats
+        </div>
+        <StatRow label="Files" value={files.length} />
+        <StatRow label="Total" value={fmtBytes(files.reduce((s,f) => s + (f.size || 0), 0))} />
+        <StatRow label="Active transfers" value={transfers.filter(t => !t.done).length} />
+      </Card>
+      <Button onClick={onUpload} className="w-full bg-gradient-to-r from-blue-500 to-violet-500 hover:from-blue-600 hover:to-violet-600">
+        <Upload className="h-4 w-4 mr-2" /> Upload files
+      </Button>
+      <div className="text-[10px] text-center text-muted-foreground">Ctrl/⌘ + U to upload</div>
+    </div>
+  );
+}
+
+function RightRoomPanel({ transfers, activity }) {
+  return (
+    <Tabs defaultValue="transfers" className="flex flex-col flex-1 min-h-0">
+      <TabsList className="m-3 grid grid-cols-2">
+        <TabsTrigger value="transfers" className="text-xs">Transfers</TabsTrigger>
+        <TabsTrigger value="activity" className="text-xs">Activity</TabsTrigger>
+      </TabsList>
+      <TabsContent value="transfers" className="flex-1 min-h-0 mt-0">
+        <ScrollArea className="h-full px-3 pb-3">
+          {transfers.length === 0 ? (
+            <div className="text-xs text-muted-foreground p-3 text-center">No transfers yet</div>
+          ) : transfers.slice().reverse().map(t => <TransferRow key={t.id} t={t} />)}
+        </ScrollArea>
+      </TabsContent>
+      <TabsContent value="activity" className="flex-1 min-h-0 mt-0">
+        <ScrollArea className="h-full px-3 pb-3">
+          {activity.length === 0 ? (
+            <div className="text-xs text-muted-foreground p-3 text-center">No activity yet</div>
+          ) : activity.map(a => (
+            <div key={a.id} className="flex items-start gap-2 py-1.5 text-xs">
+              <Activity className="h-3 w-3 mt-0.5 text-muted-foreground shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="truncate">{a.text}</div>
+                <div className="text-[10px] text-muted-foreground">{new Date(a.time).toLocaleTimeString()}</div>
+              </div>
+            </div>
+          ))}
+        </ScrollArea>
+      </TabsContent>
+    </Tabs>
   );
 }
 
