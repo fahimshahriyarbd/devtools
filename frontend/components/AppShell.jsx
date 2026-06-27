@@ -6,7 +6,7 @@ import { useTheme } from 'next-themes';
 import { motion } from 'framer-motion';
 import {
   LayoutDashboard, FileArchive, FolderTree, GitCompareArrows, Wifi, Share2,
-  Moon, Sun, Command, Sparkles, Hash, Dice5, ChevronsLeft, ChevronsRight,
+  Moon, Sun, Command, Sparkles, Hash, Dice5, ChevronsLeft, ChevronsRight, Braces,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -20,6 +20,7 @@ const NAV = [
   { href: '/text-compare', label: 'Text Compare', icon: GitCompareArrows },
   { href: '/hash-generator', label: 'Hash Generator', icon: Hash },
   { href: '/random-generator', label: 'Random Generator', icon: Dice5 },
+  { href: '/json', label: 'JSON Studio', icon: Braces },
   { href: '/wifi-share', label: 'WiFi Text', icon: Wifi },
   { href: '/wifi-fileshare', label: 'WiFi Files', icon: Share2 },
 ];

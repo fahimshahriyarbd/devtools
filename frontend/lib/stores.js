@@ -77,3 +77,32 @@ export const useRandomStore = create()(
     { name: 'devhub-random', storage: createJSONStorage(() => localStorage) }
   )
 );
+
+// ----- JSON validator / beautifier store -----
+export const useJsonStore = create()(
+  persist(
+    (set) => ({
+      input: '',
+      indent: 2, // 2 | 4 | 'tab'
+      wordWrap: true,
+      // Recent entries: { id, time, preview, fullInput, valid, size }
+      history: [],
+      // Saved snapshots: { id, title, time, input }
+      snapshots: [],
+      setInput: (input) => set({ input }),
+      setIndent: (indent) => set({ indent }),
+      setWordWrap: (wordWrap) => set({ wordWrap }),
+      addHistory: (entry) => set(s => {
+        // Avoid back-to-back duplicates so rapid typing doesn't bloat history.
+        const last = s.history[0];
+        if (last && last.fullInput === entry.fullInput) return s;
+        return { history: [entry, ...s.history].slice(0, 200) };
+      }),
+      clearHistory: () => set({ history: [] }),
+      removeHistory: (id) => set(s => ({ history: s.history.filter(h => h.id !== id) })),
+      addSnapshot: (snap) => set(s => ({ snapshots: [snap, ...s.snapshots].slice(0, 200) })),
+      deleteSnapshot: (id) => set(s => ({ snapshots: s.snapshots.filter(x => x.id !== id) })),
+    }),
+    { name: 'devhub-json', storage: createJSONStorage(() => localStorage) }
+  )
+);

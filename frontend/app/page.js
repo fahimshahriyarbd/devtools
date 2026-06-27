@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { FileArchive, FolderTree, GitCompareArrows, Wifi, Share2, ArrowRight, Sparkles, Zap, Shield, Globe, Layers, Activity } from 'lucide-react';
+import { FileArchive, FolderTree, GitCompareArrows, Wifi, Share2, ArrowRight, Sparkles, Zap, Shield, Globe, Layers, Activity, Braces } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -42,6 +42,14 @@ const tools = [
     desc: 'Diff two archives. See added, removed, and modified files. Inspect contents without extracting.',
     icon: FileArchive,
     color: 'from-yellow-500 via-amber-500 to-orange-500',
+  },
+  {
+    href: '/json',
+    title: 'JSON Studio',
+    desc: 'Validate, beautify, and inspect JSON. Live error markers, interactive tree, JSONPath query, schema validation, and conversion to YAML / XML / CSV / TypeScript.',
+    icon: Braces,
+    color: 'from-emerald-500 via-teal-500 to-cyan-500',
+    badge: 'NEW',
   },
 ];
 
