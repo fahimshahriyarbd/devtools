@@ -126,75 +126,59 @@ export default function RandomGeneratorPage() {
       {/* Center */}
       <Tabs value={Object.values({}).length ? 'a' : 'a'} className="flex-1 min-w-0 flex flex-col">
         <main className="flex-1 min-w-0 flex flex-col">
-          <header className="flex flex-wrap items-center gap-2 sm:gap-3 p-3 sm:p-4 border-b border-border/60 bg-card/40 backdrop-blur">
-            {/* Mobile left drawer — pinned to the far left */}
-            <Sheet>
-              <SheetTrigger asChild>
-                <Button
-                  size="sm" variant="outline" className="lg:hidden h-9 px-2"
-                  data-testid="mobile-left-panel-btn"
-                  title="Quick actions, collections, recent"
-                >
-                  <PanelLeft className="h-4 w-4" />
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="left" className="p-0 w-[88vw] sm:w-80 max-w-sm flex flex-col">
-                <SheetHeader className="sr-only"><SheetTitle>Quick actions & collections</SheetTitle></SheetHeader>
-                <LeftPanel
-                  options={options}
-                  setType={setType}
-                  setLastResults={setLastResults}
-                  addHistory={addHistory}
-                  history={history}
-                  collections={collections}
-                  activeColl={activeColl} setActiveColl={setActiveColl}
-                  addCollection={addCollection} renameCollection={renameCollection} deleteCollection={deleteCollection}
-                  removeFromCollection={removeFromCollection}
-                  newCollName={newCollName} setNewCollName={setNewCollName}
-                />
-              </SheetContent>
-            </Sheet>
-
-            <div className="flex items-center gap-2 min-w-0">
-              <Select value={type} onValueChange={setType}>
-                <SelectTrigger className="w-[150px] sm:w-[220px] h-9"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {Object.entries(
-                    GENERATOR_TYPES.reduce((acc, t) => { (acc[t.category] = acc[t.category] || []).push(t); return acc; }, {})
-                  ).map(([cat, list]) => (
-                    <div key={cat}>
-                      <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-muted-foreground">{cat}</div>
-                      {list.map(t => <SelectItem key={t.id} value={t.id}>{t.label}</SelectItem>)}
-                    </div>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Badge variant="secondary" className="text-[10px] hidden sm:inline-flex">{typeMeta.category}</Badge>
-            </div>
-            <div className="ml-auto flex items-center gap-2">
-              <Tabs value={view} onValueChange={setView}>
-                <TabsList className="h-9">
-                  <TabsTrigger value="cards" className="text-xs">Cards</TabsTrigger>
-                  <TabsTrigger value="table" className="text-xs">Table</TabsTrigger>
-                </TabsList>
-              </Tabs>
-              <Select onValueChange={(v) => exportData(v)}>
-                <SelectTrigger className="w-[92px] sm:w-[120px] h-9"><SelectValue placeholder="Export…" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="txt">.txt</SelectItem>
-                  <SelectItem value="csv">.csv</SelectItem>
-                  <SelectItem value="json">.json</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button onClick={generate} className="bg-gradient-to-r from-fuchsia-500 to-purple-500 hover:from-fuchsia-600 hover:to-purple-600">
-                <Zap className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Generate</span>
-              </Button>
-
-              {/* Mobile right drawer — pinned to the far right */}
+          <header className="flex flex-col xl:flex-row xl:items-center gap-2 sm:gap-3 p-3 sm:p-4 border-b border-border/60 bg-card/40 backdrop-blur">
+            {/* Top row on mobile (flex-col), left half on desktop (xl:flex-row).
+                Pin the left panel button to the start, push the right panel
+                button to the end via ml-auto so they bookend this row. */}
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
               <Sheet>
                 <SheetTrigger asChild>
                   <Button
-                    size="sm" variant="outline" className="xl:hidden h-9 px-2"
+                    size="sm" variant="outline" className="lg:hidden h-9 px-2 shrink-0"
+                    data-testid="mobile-left-panel-btn"
+                    title="Quick actions, collections, recent"
+                  >
+                    <PanelLeft className="h-4 w-4" />
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="left" className="p-0 w-[88vw] sm:w-80 max-w-sm flex flex-col">
+                  <SheetHeader className="sr-only"><SheetTitle>Quick actions & collections</SheetTitle></SheetHeader>
+                  <LeftPanel
+                    options={options}
+                    setType={setType}
+                    setLastResults={setLastResults}
+                    addHistory={addHistory}
+                    history={history}
+                    collections={collections}
+                    activeColl={activeColl} setActiveColl={setActiveColl}
+                    addCollection={addCollection} renameCollection={renameCollection} deleteCollection={deleteCollection}
+                    removeFromCollection={removeFromCollection}
+                    newCollName={newCollName} setNewCollName={setNewCollName}
+                  />
+                </SheetContent>
+              </Sheet>
+
+              <div className="flex items-center gap-2 min-w-0">
+                <Select value={type} onValueChange={setType}>
+                  <SelectTrigger className="w-[150px] sm:w-[220px] h-9"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(
+                      GENERATOR_TYPES.reduce((acc, t) => { (acc[t.category] = acc[t.category] || []).push(t); return acc; }, {})
+                    ).map(([cat, list]) => (
+                      <div key={cat}>
+                        <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-muted-foreground">{cat}</div>
+                        {list.map(t => <SelectItem key={t.id} value={t.id}>{t.label}</SelectItem>)}
+                      </div>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Badge variant="secondary" className="text-[10px] hidden sm:inline-flex">{typeMeta.category}</Badge>
+              </div>
+
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button
+                    size="sm" variant="outline" className="xl:hidden h-9 px-2 shrink-0 ml-auto"
                     data-testid="mobile-right-panel-btn"
                     title="Strength, stats, history"
                   >
@@ -217,6 +201,27 @@ export default function RandomGeneratorPage() {
                   />
                 </SheetContent>
               </Sheet>
+            </div>
+
+            {/* Bottom row on mobile, right half on desktop */}
+            <div className="flex items-center gap-2 justify-end xl:ml-auto">
+              <Tabs value={view} onValueChange={setView}>
+                <TabsList className="h-9">
+                  <TabsTrigger value="cards" className="text-xs">Cards</TabsTrigger>
+                  <TabsTrigger value="table" className="text-xs">Table</TabsTrigger>
+                </TabsList>
+              </Tabs>
+              <Select onValueChange={(v) => exportData(v)}>
+                <SelectTrigger className="w-[92px] sm:w-[120px] h-9"><SelectValue placeholder="Export…" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="txt">.txt</SelectItem>
+                  <SelectItem value="csv">.csv</SelectItem>
+                  <SelectItem value="json">.json</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button onClick={generate} className="bg-gradient-to-r from-fuchsia-500 to-purple-500 hover:from-fuchsia-600 hover:to-purple-600">
+                <Zap className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Generate</span>
+              </Button>
             </div>
           </header>
 
