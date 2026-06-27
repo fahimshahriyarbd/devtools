@@ -114,27 +114,39 @@ export function PreviewDialog({ row, prev, next, onPrev, onNext, onClose, theme,
   const lang = langFromPath(row.path);
   const diffEditorRef = useRef(null);
 
+  // Re-apply word-wrap on the diff editor whenever the toggle/mode/file
+  // changes — and ALSO on window resize. Monaco's DiffEditor drops the
+  // `wordWrapOverride1/2` flags on the original (left) editor when the
+  // layout breakpoint changes (e.g., desktop → mobile → desktop), which
+  // leaves the left pane unwrapped until the user toggles the switch.
   useEffect(() => {
-    const ed = diffEditorRef.current;
-    if (!ed) return;
-    const value = wrap ? 'on' : 'off';
-    // In INLINE mode, the original editor isn't rendered but its line heights
-    // drive inline view-zone gaps. Keep wrap OFF on the original in inline.
-    const origVal = sideBySide ? value : 'off';
-    const origOpts = {
-      wordWrap: origVal, wordWrapOverride1: origVal, wordWrapOverride2: origVal, wrappingStrategy: 'advanced',
+    const apply = () => {
+      const ed = diffEditorRef.current;
+      if (!ed) return;
+      const value = wrap ? 'on' : 'off';
+      // In INLINE mode, the original editor isn't rendered but its line heights
+      // drive inline view-zone gaps. Keep wrap OFF on the original in inline.
+      const origVal = sideBySide ? value : 'off';
+      const origOpts = {
+        wordWrap: origVal, wordWrapOverride1: origVal, wordWrapOverride2: origVal, wrappingStrategy: 'advanced',
+      };
+      const modOpts = {
+        wordWrap: value, wordWrapOverride1: value, wordWrapOverride2: value, wrappingStrategy: 'advanced',
+      };
+      try { ed.updateOptions({ diffWordWrap: value }); } catch { /* noop */ }
+      const orig = ed.getOriginalEditor();
+      const mod = ed.getModifiedEditor();
+      orig.updateOptions(origOpts);
+      mod.updateOptions(modOpts);
+      requestAnimationFrame(() => {
+        try { orig.layout(); mod.layout(); } catch { /* noop */ }
+      });
     };
-    const modOpts = {
-      wordWrap: value, wordWrapOverride1: value, wordWrapOverride2: value, wrappingStrategy: 'advanced',
-    };
-    try { ed.updateOptions({ diffWordWrap: value }); } catch { /* noop */ }
-    const orig = ed.getOriginalEditor();
-    const mod = ed.getModifiedEditor();
-    orig.updateOptions(origOpts);
-    mod.updateOptions(modOpts);
-    requestAnimationFrame(() => {
-      try { orig.layout(); mod.layout(); } catch { /* noop */ }
-    });
+    apply();
+    let t;
+    const onResize = () => { clearTimeout(t); t = setTimeout(apply, 120); };
+    window.addEventListener('resize', onResize);
+    return () => { window.removeEventListener('resize', onResize); clearTimeout(t); };
   }, [wrap, sideBySide, row?.path]);
 
   const download = (which) => {

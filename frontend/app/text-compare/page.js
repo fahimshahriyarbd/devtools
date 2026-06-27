@@ -44,37 +44,49 @@ export default function TextComparePage() {
   // Monaco's DiffEditor has TWO internal override layers (wordWrapOverride1 + wordWrapOverride2)
   // that block wrap on the original (left, read-only) pane. We must set BOTH overrides,
   // not just `wordWrap`, for wrap to actually take effect on the original pane.
+  // Note: we ALSO re-apply on window resize. Monaco silently drops the
+  // wordWrapOverride on the original editor when the layout breakpoint changes
+  // (e.g., desktop → mobile → desktop), which otherwise leaves the left pane
+  // unwrapped until the user toggles the switch off and on again.
   useEffect(() => {
-    const ed = diffEditorRef.current;
-    if (!ed) return;
-    const value = wordWrap ? 'on' : 'off';
-    // In INLINE mode, the original (left) editor isn't rendered — but Monaco
-    // still uses its computed line heights to lay out the inline view zones.
-    // If we let the original editor wrap (override1/2 = 'on'), the unchanged
-    // rows in the inline diff get inflated with huge gaps. Keep wrap OFF on
-    // the original pane in inline mode; only the modified pane wraps.
-    const isInline = mode === 'diff' && !renderSideBySide;
-    const origVal = isInline ? 'off' : value;
-    const origOpts = {
-      wordWrap: origVal,
-      wordWrapOverride1: origVal,
-      wordWrapOverride2: origVal,
-      wrappingStrategy: 'advanced',
+    const apply = () => {
+      const ed = diffEditorRef.current;
+      if (!ed) return;
+      const value = wordWrap ? 'on' : 'off';
+      // In INLINE mode, the original (left) editor isn't rendered — but Monaco
+      // still uses its computed line heights to lay out the inline view zones.
+      // If we let the original editor wrap (override1/2 = 'on'), the unchanged
+      // rows in the inline diff get inflated with huge gaps. Keep wrap OFF on
+      // the original pane in inline mode; only the modified pane wraps.
+      const isInline = mode === 'diff' && !renderSideBySide;
+      const origVal = isInline ? 'off' : value;
+      const origOpts = {
+        wordWrap: origVal,
+        wordWrapOverride1: origVal,
+        wordWrapOverride2: origVal,
+        wrappingStrategy: 'advanced',
+      };
+      const modOpts = {
+        wordWrap: value,
+        wordWrapOverride1: value,
+        wordWrapOverride2: value,
+        wrappingStrategy: 'advanced',
+      };
+      try { ed.updateOptions({ diffWordWrap: value }); } catch { /* noop */ }
+      const orig = ed.getOriginalEditor();
+      const mod = ed.getModifiedEditor();
+      orig.updateOptions(origOpts);
+      mod.updateOptions(modOpts);
+      requestAnimationFrame(() => {
+        try { orig.layout(); mod.layout(); } catch { /* noop */ }
+      });
     };
-    const modOpts = {
-      wordWrap: value,
-      wordWrapOverride1: value,
-      wordWrapOverride2: value,
-      wrappingStrategy: 'advanced',
-    };
-    try { ed.updateOptions({ diffWordWrap: value }); } catch { /* noop */ }
-    const orig = ed.getOriginalEditor();
-    const mod = ed.getModifiedEditor();
-    orig.updateOptions(origOpts);
-    mod.updateOptions(modOpts);
-    requestAnimationFrame(() => {
-      try { orig.layout(); mod.layout(); } catch { /* noop */ }
-    });
+    apply();
+    // Debounced re-apply on resize.
+    let t;
+    const onResize = () => { clearTimeout(t); t = setTimeout(apply, 120); };
+    window.addEventListener('resize', onResize);
+    return () => { window.removeEventListener('resize', onResize); clearTimeout(t); };
   }, [wordWrap, mode, renderSideBySide]);
 
   const beforeMountDiff = (monaco) => {
