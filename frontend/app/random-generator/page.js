@@ -127,62 +127,33 @@ export default function RandomGeneratorPage() {
       <Tabs value={Object.values({}).length ? 'a' : 'a'} className="flex-1 min-w-0 flex flex-col">
         <main className="flex-1 min-w-0 flex flex-col">
           <header className="flex flex-wrap items-center gap-2 sm:gap-3 p-3 sm:p-4 border-b border-border/60 bg-card/40 backdrop-blur">
-            {/* Mobile drawer triggers — grouped together so they always sit on the same row */}
-            <div className="flex items-center gap-1 xl:hidden">
-              <Sheet>
-                <SheetTrigger asChild>
-                  <Button
-                    size="sm" variant="outline" className="lg:hidden h-9 px-2"
-                    data-testid="mobile-left-panel-btn"
-                    title="Quick actions, collections, recent"
-                  >
-                    <PanelLeft className="h-4 w-4" />
-                  </Button>
-                </SheetTrigger>
-                <SheetContent side="left" className="p-0 w-[88vw] sm:w-80 max-w-sm flex flex-col">
-                  <SheetHeader className="sr-only"><SheetTitle>Quick actions & collections</SheetTitle></SheetHeader>
-                  <LeftPanel
-                    options={options}
-                    setType={setType}
-                    setLastResults={setLastResults}
-                    addHistory={addHistory}
-                    history={history}
-                    collections={collections}
-                    activeColl={activeColl} setActiveColl={setActiveColl}
-                    addCollection={addCollection} renameCollection={renameCollection} deleteCollection={deleteCollection}
-                    removeFromCollection={removeFromCollection}
-                    newCollName={newCollName} setNewCollName={setNewCollName}
-                  />
-                </SheetContent>
-              </Sheet>
-
-              <Sheet>
-                <SheetTrigger asChild>
-                  <Button
-                    size="sm" variant="outline" className="h-9 px-2"
-                    data-testid="mobile-right-panel-btn"
-                    title="Strength, stats, history"
-                  >
-                    <PanelRight className="h-4 w-4" />
-                  </Button>
-                </SheetTrigger>
-                <SheetContent side="right" className="p-0 w-[88vw] sm:w-80 max-w-sm flex flex-col">
-                  <SheetHeader className="sr-only"><SheetTitle>Strength, stats, history</SheetTitle></SheetHeader>
-                  <RightPanel
-                    stats={stats}
-                    uniqueRatio={uniqueRatio}
-                    history={history}
-                    clearHistory={clearHistory}
-                    historySearch={historySearch} setHistorySearch={setHistorySearch}
-                    historyType={historyType} setHistoryType={setHistoryType}
-                    historyFavOnly={historyFavOnly} setHistoryFavOnly={setHistoryFavOnly}
-                    filteredHistory={filteredHistory}
-                    toggleHistoryFav={toggleHistoryFav}
-                    removeHistory={removeHistory}
-                  />
-                </SheetContent>
-              </Sheet>
-            </div>
+            {/* Mobile left drawer — pinned to the far left */}
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button
+                  size="sm" variant="outline" className="lg:hidden h-9 px-2"
+                  data-testid="mobile-left-panel-btn"
+                  title="Quick actions, collections, recent"
+                >
+                  <PanelLeft className="h-4 w-4" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="p-0 w-[88vw] sm:w-80 max-w-sm flex flex-col">
+                <SheetHeader className="sr-only"><SheetTitle>Quick actions & collections</SheetTitle></SheetHeader>
+                <LeftPanel
+                  options={options}
+                  setType={setType}
+                  setLastResults={setLastResults}
+                  addHistory={addHistory}
+                  history={history}
+                  collections={collections}
+                  activeColl={activeColl} setActiveColl={setActiveColl}
+                  addCollection={addCollection} renameCollection={renameCollection} deleteCollection={deleteCollection}
+                  removeFromCollection={removeFromCollection}
+                  newCollName={newCollName} setNewCollName={setNewCollName}
+                />
+              </SheetContent>
+            </Sheet>
 
             <div className="flex items-center gap-2 min-w-0">
               <Select value={type} onValueChange={setType}>
@@ -218,6 +189,34 @@ export default function RandomGeneratorPage() {
               <Button onClick={generate} className="bg-gradient-to-r from-fuchsia-500 to-purple-500 hover:from-fuchsia-600 hover:to-purple-600">
                 <Zap className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Generate</span>
               </Button>
+
+              {/* Mobile right drawer — pinned to the far right */}
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button
+                    size="sm" variant="outline" className="xl:hidden h-9 px-2"
+                    data-testid="mobile-right-panel-btn"
+                    title="Strength, stats, history"
+                  >
+                    <PanelRight className="h-4 w-4" />
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="right" className="p-0 w-[88vw] sm:w-80 max-w-sm flex flex-col">
+                  <SheetHeader className="sr-only"><SheetTitle>Strength, stats, history</SheetTitle></SheetHeader>
+                  <RightPanel
+                    stats={stats}
+                    uniqueRatio={uniqueRatio}
+                    history={history}
+                    clearHistory={clearHistory}
+                    historySearch={historySearch} setHistorySearch={setHistorySearch}
+                    historyType={historyType} setHistoryType={setHistoryType}
+                    historyFavOnly={historyFavOnly} setHistoryFavOnly={setHistoryFavOnly}
+                    filteredHistory={filteredHistory}
+                    toggleHistoryFav={toggleHistoryFav}
+                    removeHistory={removeHistory}
+                  />
+                </SheetContent>
+              </Sheet>
             </div>
           </header>
 

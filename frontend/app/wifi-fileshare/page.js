@@ -540,9 +540,28 @@ function LobbyView({ name, setName, joinCode, setJoinCode, onCreate, onJoin }) {
 function RoomHeader({ room, peers, onLeave, onShowQR, leftPanel, rightPanel }) {
   return (
     <header className="flex flex-wrap items-center gap-2 sm:gap-3 p-3 sm:p-4 border-b border-border/60 bg-card/40 backdrop-blur">
-      <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-blue-500 via-violet-500 to-fuchsia-500 grid place-items-center shrink-0">
+      {/* Mobile-only: left sidebar button sits where the brand icon would be */}
+      <Sheet>
+        <SheetTrigger asChild>
+          <Button
+            size="sm" variant="outline" className="lg:hidden h-9 px-2 shrink-0"
+            data-testid="wifi-fileshare-left-btn"
+            title="Room, devices, stats"
+          >
+            <Menu className="h-4 w-4" />
+          </Button>
+        </SheetTrigger>
+        <SheetContent side="left" className="p-0 w-[88vw] sm:w-80 max-w-sm flex flex-col">
+          <SheetHeader className="sr-only"><SheetTitle>Room & devices</SheetTitle></SheetHeader>
+          {leftPanel}
+        </SheetContent>
+      </Sheet>
+
+      {/* Brand icon — desktop only (was the "bluetooth-looking" Share2 icon on mobile) */}
+      <div className="hidden lg:grid h-9 w-9 rounded-lg bg-gradient-to-br from-blue-500 via-violet-500 to-fuchsia-500 place-items-center shrink-0">
         <Share2 className="h-4 w-4 text-white" />
       </div>
+
       <div className="min-w-0">
         <div className="flex items-center gap-2">
           <span className="font-semibold"><span className="hidden sm:inline">WiFi File Share</span><span className="sm:hidden">Files</span></span>
@@ -552,34 +571,27 @@ function RoomHeader({ room, peers, onLeave, onShowQR, leftPanel, rightPanel }) {
           <Wifi className="h-3 w-3 text-emerald-400" /> Live · {peers.length + 1} device{peers.length === 0 ? '' : 's'}
         </div>
       </div>
+
       <div className="ml-auto flex items-center gap-1 sm:gap-2">
-        {/* Mobile-only drawers — kept together so they share the same row */}
-        <div className="flex items-center gap-1 lg:hidden">
-          <Sheet>
-            <SheetTrigger asChild>
-              <Button size="sm" variant="outline" className="h-9 px-2" data-testid="wifi-fileshare-left-btn" title="Room, devices, stats">
-                <Menu className="h-4 w-4" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="left" className="p-0 w-[88vw] sm:w-80 max-w-sm flex flex-col">
-              <SheetHeader className="sr-only"><SheetTitle>Room & devices</SheetTitle></SheetHeader>
-              {leftPanel}
-            </SheetContent>
-          </Sheet>
-          <Sheet>
-            <SheetTrigger asChild>
-              <Button size="sm" variant="outline" className="h-9 px-2" data-testid="wifi-fileshare-right-btn" title="Transfers & activity">
-                <ListChecks className="h-4 w-4" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="right" className="p-0 w-[88vw] sm:w-80 max-w-sm flex flex-col">
-              <SheetHeader className="sr-only"><SheetTitle>Transfers & activity</SheetTitle></SheetHeader>
-              {rightPanel}
-            </SheetContent>
-          </Sheet>
-        </div>
         <Button size="sm" variant="outline" onClick={onShowQR} className="h-9 px-2 sm:px-3"><QrCode className="h-3.5 w-3.5 sm:mr-1.5" /><span className="hidden sm:inline">Invite</span></Button>
         <Button size="sm" variant="ghost" onClick={onLeave} className="h-9 px-2 sm:px-3"><X className="h-3.5 w-3.5 sm:mr-1" /><span className="hidden sm:inline">Leave</span></Button>
+
+        {/* Mobile-only: right sidebar button at the far right */}
+        <Sheet>
+          <SheetTrigger asChild>
+            <Button
+              size="sm" variant="outline" className="lg:hidden h-9 px-2 shrink-0"
+              data-testid="wifi-fileshare-right-btn"
+              title="Transfers & activity"
+            >
+              <ListChecks className="h-4 w-4" />
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="right" className="p-0 w-[88vw] sm:w-80 max-w-sm flex flex-col">
+            <SheetHeader className="sr-only"><SheetTitle>Transfers & activity</SheetTitle></SheetHeader>
+            {rightPanel}
+          </SheetContent>
+        </Sheet>
       </div>
     </header>
   );
