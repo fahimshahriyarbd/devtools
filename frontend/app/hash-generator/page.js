@@ -1,9 +1,10 @@
 'use client';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Hash, Copy, Download, FileUp, Save, Trash2, Search, Check, X,
   Sparkles, Clock, FileText, CornerDownLeft, BookmarkPlus, BookmarkX, History,
+  Zap, Pause, Play,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -23,7 +24,8 @@ import { useHashStore } from '@/lib/stores';
 
 export default function HashGeneratorPage() {
   const {
-    input, setInput, selected, setSelected, history, addHistory, clearHistory, removeHistory,
+    input, setInput, selected, setSelected, autoCompute, setAutoCompute,
+    history, addHistory, clearHistory, removeHistory,
     snapshots, addSnapshot, deleteSnapshot,
   } = useHashStore();
 
@@ -36,26 +38,35 @@ export default function HashGeneratorPage() {
   const [hashB, setHashB] = useState('');
   const [sideSearch, setSideSearch] = useState('');
   const [snapTab, setSnapTab] = useState('recent'); // recent | snapshots
+  // Tracks whether the current results match the live input — drives the
+  // "stale" indicator on the Compute button in manual mode so the user
+  // knows when a recompute is needed.
+  const [resultsForInput, setResultsForInput] = useState('');
   const debounceRef = useRef(null);
 
-  // Auto compute on input change (debounced)
+  // Shared compute routine — used by the auto effect AND the manual button.
+  const runCompute = useCallback(async (text) => {
+    setBusy(true);
+    const r = await computeAll(text, selected);
+    setResults(r); setResultsForInput(text);
+    setBusy(false);
+    addHistory(r.filter(x => !x.error).map(x => ({
+      id: crypto.randomUUID(), time: Date.now(), algo: x.algorithm, label: x.label,
+      preview: text.slice(0, 60), fullInput: text, value: x.value, source: 'text',
+    })));
+  }, [selected, addHistory]);
+
+  // Auto compute on input change (debounced) — only when autoCompute is on.
   useEffect(() => {
     if (tab !== 'text') return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!input) { setResults([]); return; }
-    debounceRef.current = setTimeout(async () => {
-      setBusy(true);
-      const r = await computeAll(input, selected);
-      setResults(r);
-      setBusy(false);
-      const fullInput = input;
-      addHistory(r.filter(x => !x.error).map(x => ({
-        id: crypto.randomUUID(), time: Date.now(), algo: x.algorithm, label: x.label,
-        preview: fullInput.slice(0, 60), fullInput, value: x.value, source: 'text',
-      })));
-    }, 350);
+    if (!autoCompute) return;
+    if (!input) { setResults([]); setResultsForInput(''); return; }
+    debounceRef.current = setTimeout(() => { runCompute(input); }, 350);
     return () => clearTimeout(debounceRef.current);
-  }, [input, selected, tab]);
+  }, [input, selected, tab, autoCompute, runCompute]);
+
+  const isStale = !!input && resultsForInput !== input;
 
   // ----- Keyboard shortcuts -----
   useEffect(() => {
@@ -63,11 +74,7 @@ export default function HashGeneratorPage() {
       const ctrl = e.ctrlKey || e.metaKey;
       if (ctrl && e.key === 'Enter') {
         e.preventDefault();
-        if (input) {
-          setBusy(true);
-          const r = await computeAll(input, selected);
-          setResults(r); setBusy(false);
-        }
+        if (input) runCompute(input);
       } else if (ctrl && e.shiftKey && e.key.toLowerCase() === 'c') {
         e.preventDefault();
         if (results[0]?.value) { navigator.clipboard.writeText(results[0].value); toast.success(`Copied ${results[0].label}`); }
@@ -78,7 +85,7 @@ export default function HashGeneratorPage() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [input, selected, results]);
+  }, [input, results, runCompute]);
 
   const saveSnapshot = () => {
     if (!results.length) return toast.error('Nothing to save');
@@ -119,14 +126,7 @@ export default function HashGeneratorPage() {
       toast.error('Select at least one algorithm');
       return;
     }
-    setBusy(true);
-    const r = await computeAll('', selected);
-    setResults(r);
-    setBusy(false);
-    addHistory(r.filter(x => !x.error).map(x => ({
-      id: crypto.randomUUID(), time: Date.now(), algo: x.algorithm, label: x.label,
-      preview: '(empty string)', fullInput: '', value: x.value, source: 'text',
-    })));
+    await runCompute('');
     toast.success('Hashed empty string');
   };
 
@@ -275,6 +275,36 @@ export default function HashGeneratorPage() {
           )}
 
           <div className="ml-auto flex items-center gap-2">
+            {/* Auto / Manual compute toggle + manual Compute button */}
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-9 px-2 sm:px-3"
+              data-testid="hash-auto-toggle-btn"
+              onClick={() => setAutoCompute(!autoCompute)}
+              title={autoCompute ? 'Auto: hashes regenerate on input change. Click to switch to Manual.' : 'Manual: click Compute to hash. Click to switch to Auto.'}
+            >
+              {autoCompute
+                ? <><Zap className="h-3.5 w-3.5 sm:mr-1.5 text-emerald-400" /><span className="hidden sm:inline">Auto</span></>
+                : <><Pause className="h-3.5 w-3.5 sm:mr-1.5 text-amber-400" /><span className="hidden sm:inline">Manual</span></>}
+            </Button>
+            {!autoCompute && (
+              <Button
+                size="sm"
+                className={cn(
+                  'h-9 px-2 sm:px-3 bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white',
+                  isStale && 'ring-2 ring-amber-400/60'
+                )}
+                data-testid="hash-compute-btn"
+                onClick={() => runCompute(input)}
+                disabled={!input || busy}
+                title={isStale ? 'Results are stale — click to recompute' : 'Compute hashes now'}
+              >
+                <Play className="h-3.5 w-3.5 sm:mr-1.5" />
+                <span className="hidden sm:inline">Compute</span>
+                {isStale && <span className="ml-1 h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />}
+              </Button>
+            )}
             <Button size="sm" variant="outline" onClick={saveSnapshot} disabled={!results.length} data-testid="save-snapshot-btn">
               <Save className="h-3.5 w-3.5 sm:mr-1.5" /><span className="hidden sm:inline">Save</span>
             </Button>

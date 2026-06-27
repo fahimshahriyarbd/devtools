@@ -8,11 +8,13 @@ export const useHashStore = create()(
     (set, get) => ({
       input: '',
       selected: ['md5', 'sha1', 'sha256', 'sha512', 'blake2b', 'crc32'],
+      autoCompute: true, // when false, the user must click "Compute" to refresh
       history: [], // { id, time, algo, preview, value, source }
       snapshots: [], // { id, title, time, input, hashes, favorite }
       favorites: [], // ids of snapshots
       setInput: (input) => set({ input }),
       setSelected: (selected) => set({ selected }),
+      setAutoCompute: (autoCompute) => set({ autoCompute }),
       addHistory: (entries) => set(s => ({
         history: [...entries, ...s.history].slice(0, 500),
       })),

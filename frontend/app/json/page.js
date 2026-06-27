@@ -48,6 +48,11 @@ export default function JsonValidatorPage() {
   const [convertTo, setConvertTo] = useState('yaml');
   const [schemaText, setSchemaText] = useState('');
   const [schemaResult, setSchemaResult] = useState(null);
+  // Global expand/collapse for the Tree view.
+  // `treeForce` carries `{ open, nonce }`: TreeNode re-syncs its local `open`
+  // state whenever `nonce` increments, so clicking the toggle expands or
+  // collapses every node regardless of its prior state.
+  const [treeForce, setTreeForce] = useState({ open: null, nonce: 0 });
   const historyTimer = useRef(null);
 
   // Live parse — drives validation status, tree, stats, conversion, etc.
@@ -332,9 +337,26 @@ export default function JsonValidatorPage() {
                 </TabsList>
 
                 <TabsContent value="tree" className="flex-1 min-h-0 mt-3">
+                  {parsed.ok && (
+                    <div className="flex items-center gap-1.5 px-3 pb-2">
+                      <Button
+                        size="sm" variant="outline" className="h-7 text-[11px] px-2"
+                        data-testid="json-tree-toggle-btn"
+                        onClick={() => setTreeForce(s => ({ open: !s.open, nonce: s.nonce + 1 }))}
+                        title={treeForce.open ? 'Collapse all nodes' : 'Expand all nodes'}
+                      >
+                        {treeForce.open
+                          ? <><Minimize2 className="h-3 w-3 mr-1" />Collapse all</>
+                          : <><Maximize2 className="h-3 w-3 mr-1" />Expand all</>}
+                      </Button>
+                      <span className="text-[10px] text-muted-foreground ml-auto">
+                        {treeForce.open === null ? 'default view' : (treeForce.open ? 'all expanded' : 'all collapsed')}
+                      </span>
+                    </div>
+                  )}
                   <ScrollArea className="h-full px-3 pb-3">
                     {parsed.ok ? (
-                      <TreeView data={parsed.data} />
+                      <TreeView data={parsed.data} forceOpen={treeForce.open} forceNonce={treeForce.nonce} />
                     ) : (
                       <SidePaneHint title="No tree available" subtitle={input ? 'Fix the JSON to view tree.' : 'Paste JSON to inspect.'} icon={ListTree} />
                     )}
@@ -571,16 +593,24 @@ function SidePaneHint({ icon: Icon, title, subtitle }) {
 }
 
 // ---------- Tree view ----------
-function TreeView({ data }) {
+function TreeView({ data, forceOpen, forceNonce }) {
   return (
     <div className="font-mono text-[12px] leading-relaxed">
-      <TreeNode label="$" value={data} depth={0} isRoot />
+      <TreeNode label="$" value={data} depth={0} isRoot forceOpen={forceOpen} forceNonce={forceNonce} />
     </div>
   );
 }
 
-function TreeNode({ label, value, depth, isRoot }) {
+function TreeNode({ label, value, depth, isRoot, forceOpen, forceNonce }) {
   const [open, setOpen] = useState(depth < 2);
+  // Whenever the user clicks "Expand all" or "Collapse all", `forceNonce`
+  // increments and we adopt the new global state. After that the user can
+  // still toggle individual nodes by clicking — the override only applies
+  // at the moment of the explicit toggle, not on every render.
+  useEffect(() => {
+    if (forceOpen === null || forceOpen === undefined) return;
+    setOpen(forceOpen);
+  }, [forceNonce, forceOpen]);
   const type = value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
   const isCollection = type === 'array' || type === 'object';
   const entries = isCollection ? (type === 'array' ? value.map((v, i) => [i, v]) : Object.entries(value)) : [];
@@ -624,7 +654,7 @@ function TreeNode({ label, value, depth, isRoot }) {
       {open && (
         <div className="ml-3 border-l border-border/40 pl-2">
           {entries.map(([k, v]) => (
-            <TreeNode key={String(k)} label={k} value={v} depth={depth + 1} />
+            <TreeNode key={String(k)} label={k} value={v} depth={depth + 1} forceOpen={forceOpen} forceNonce={forceNonce} />
           ))}
         </div>
       )}
