@@ -22,12 +22,17 @@ import { Separator } from '@/components/ui/separator';
 import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetHeader } from '@/components/ui/sheet';
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
-import { WebRTCRoom, createRoom, joinRoom } from '@/lib/webrtc-room';
+import { WebRTCRoom, createRoom, joinRoom, checkName } from '@/lib/webrtc-room';
 import { cn } from '@/lib/utils';
 import { useMobileSheet } from '@/hooks/use-mobile-sheet';
 import JSZip from 'jszip';
 
-const CHUNK_SIZE = 64 * 1024; // 64KB chunks (safe for WebRTC)
+const CHUNK_SIZE = 16 * 1024; // 16KB chunks — safe for both WebRTC and the
+                              // server-relay fallback. Base64-encoded over
+                              // HTTP this is ~22KB per POST, well under any
+                              // production ingress / proxy body-size limit
+                              // (most default to 1MB but some CDN edges or
+                              // managed-K8s ingresses cap at 64KB by default).
 const LOW_WATER = 256 * 1024;
 const HIGH_WATER = 1 * 1024 * 1024;
 
@@ -227,11 +232,16 @@ function WifiFileShareInner() {
       const ownName = name || 'Host';
       const res = await createRoom({ name: ownName, kind: 'file' });
       if (!res?.room?.id) throw new Error(res?.error || 'Failed to create room');
+      const myName = res.assignedName || ownName;
+      if (res.assignedName && res.assignedName !== ownName) {
+        setName(myName);
+        toast.info(`Display name set to "${myName}"`);
+      }
       setRoom(res.room);
       setSelfId(res.youAre);
       setMode('in-room');
       setShowQR(true);
-      wireRoom(res.room.id, res.youAre, ownName);
+      wireRoom(res.room.id, res.youAre, myName);
       toast.success(`Room created: ${res.room.id}`);
       logActivity(`Room created: ${res.room.id}`, 'info');
     } catch (e) {
@@ -245,10 +255,15 @@ function WifiFileShareInner() {
     try {
       const res = await joinRoom({ roomId: code, name, expectKind: 'file' });
       if (!res?.room?.id) throw new Error(res?.error || 'Join failed');
+      const myName = res.assignedName || name;
+      if (res.assignedName && res.assignedName !== name) {
+        setName(myName);
+        toast.info(`Name already taken — joined as "${myName}"`);
+      }
       setRoom(res.room);
       setSelfId(res.youAre);
       setMode('in-room');
-      wireRoom(res.room.id, res.youAre, name);
+      wireRoom(res.room.id, res.youAre, myName);
       toast.success(`Joined ${res.room.id}`);
       logActivity(`Joined ${res.room.id}`, 'info');
     } catch (e) {
@@ -807,7 +822,26 @@ function LobbyView(props) {
 function LobbyViewInner({ name, setName, joinCode, setJoinCode, onCreate, onJoin }) {
   const params = useSearchParams();
   const joinParam = params.get('join');
+  const [nameHint, setNameHint] = useState(null);
   useEffect(() => { if (joinParam) setJoinCode(joinParam); }, [joinParam, setJoinCode]);
+
+  // Live-check name uniqueness against the target room. Runs when the user
+  // has typed a full 4-digit code and entered a name; debounces to avoid
+  // hammering the backend on every keystroke.
+  useEffect(() => {
+    const code = (joinCode || '').trim();
+    const n = (name || '').trim();
+    if (code.length !== 4 || !n) { setNameHint(null); return; }
+    let alive = true;
+    const t = setTimeout(async () => {
+      const res = await checkName({ roomId: code, name: n });
+      if (!alive) return;
+      if (!res?.exists) { setNameHint(null); return; }
+      if (res.taken) setNameHint({ taken: true, suggested: res.suggested });
+      else setNameHint(null);
+    }, 350);
+    return () => { alive = false; clearTimeout(t); };
+  }, [joinCode, name]);
   return (
     <div className="min-h-screen flex items-center justify-center p-6">
       <div className="w-full max-w-3xl">
@@ -849,6 +883,19 @@ function LobbyViewInner({ name, setName, joinCode, setJoinCode, onCreate, onJoin
               <div>
                 <Label className="text-xs">Your display name</Label>
                 <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Pick a name" />
+                {nameHint?.taken && (
+                  <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-amber-400">
+                    <span>That name is already in the room.</span>
+                    <button
+                      type="button"
+                      className="font-medium underline underline-offset-2 hover:text-amber-300"
+                      onClick={() => { setName(nameHint.suggested); setNameHint(null); }}
+                      data-testid="wifi-file-share-suggest-name-btn"
+                    >
+                      Use &quot;{nameHint.suggested}&quot;
+                    </button>
+                  </div>
+                )}
               </div>
               <div>
                 <Label className="text-xs">Room code</Label>

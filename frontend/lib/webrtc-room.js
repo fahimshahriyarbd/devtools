@@ -482,13 +482,13 @@ export class WebRTCRoom {
     return sent;
   }
 
-  _sendViaRelay(toId, data) {
+  _sendViaRelay(toId, data, attempt = 0) {
     const isBinary = (typeof data !== 'string');
     const payload = isBinary ? bufToB64(data) : data;
     const size = isBinary ? data.byteLength : (data.length || 0);
     const p = this.peers.get(toId);
-    if (p) p.relayBufAmt = (p.relayBufAmt || 0) + size;
-    const done = () => {
+    if (p && attempt === 0) p.relayBufAmt = (p.relayBufAmt || 0) + size;
+    const release = () => {
       if (p) p.relayBufAmt = Math.max(0, (p.relayBufAmt || 0) - size);
     };
     fetch('/api/signal/relay', {
@@ -498,23 +498,41 @@ export class WebRTCRoom {
         roomId: this.roomId, fromId: this.selfId, toId,
         data: payload, binary: isBinary,
       }),
-    }).then(done, done);
+    }).then((r) => {
+      if (!r.ok && attempt < 3) {
+        // 413 (body too large), 502/503/504 (transient proxy errors), or any
+        // other non-2xx — retry up to 3× with exponential backoff. Some
+        // production proxies / CDNs intermittently reject POSTs under load.
+        setTimeout(() => this._sendViaRelay(toId, data, attempt + 1), 250 * (attempt + 1));
+        return;
+      }
+      release();
+    }, () => {
+      // Network error (offline, DNS, CORS preflight failure). Retry as well.
+      if (attempt < 3) {
+        setTimeout(() => this._sendViaRelay(toId, data, attempt + 1), 250 * (attempt + 1));
+      } else {
+        release();
+      }
+    });
   }
 
-  _sendViaRelayBroadcast(data) {
+  _sendViaRelayBroadcast(data, attempt = 0) {
     const isBinary = (typeof data !== 'string');
     const payload = isBinary ? bufToB64(data) : data;
     const size = isBinary ? data.byteLength : (data.length || 0);
     // Track total in-flight bytes against every relay-mode peer so file-
     // share backpressure works for broadcast too.
     const tracked = [];
-    for (const [pid, p] of this.peers) {
-      if (p && (p.relayMode || p.dc?.readyState !== 'open')) {
-        p.relayBufAmt = (p.relayBufAmt || 0) + size;
-        tracked.push(p);
+    if (attempt === 0) {
+      for (const [, p] of this.peers) {
+        if (p && (p.relayMode || p.dc?.readyState !== 'open')) {
+          p.relayBufAmt = (p.relayBufAmt || 0) + size;
+          tracked.push(p);
+        }
       }
     }
-    const done = () => {
+    const release = () => {
       for (const p of tracked) {
         p.relayBufAmt = Math.max(0, (p.relayBufAmt || 0) - size);
       }
@@ -526,7 +544,19 @@ export class WebRTCRoom {
         roomId: this.roomId, fromId: this.selfId,
         data: payload, binary: isBinary,
       }),
-    }).then(done, done);
+    }).then((r) => {
+      if (!r.ok && attempt < 3) {
+        setTimeout(() => this._sendViaRelayBroadcast(data, attempt + 1), 250 * (attempt + 1));
+        return;
+      }
+      release();
+    }, () => {
+      if (attempt < 3) {
+        setTimeout(() => this._sendViaRelayBroadcast(data, attempt + 1), 250 * (attempt + 1));
+      } else {
+        release();
+      }
+    });
   }
 
   // Used by the file-share back-pressure throttle. Returns the number of
@@ -549,6 +579,12 @@ export async function createRoom({ name, kind = 'file', password }) {
     body: JSON.stringify({ hostId, hostName: name, kind, password }),
   });
   const data = await r.json();
+  // Mirror the actual assigned name back to the caller so the UI can pick
+  // up the deduped value if the backend had to rename the device.
+  if (data?.room?.devices && data.youAre) {
+    const me = data.room.devices.find((d) => d.id === data.youAre);
+    if (me?.name) data.assignedName = me.name;
+  }
   return data;
 }
 
@@ -562,5 +598,26 @@ export async function joinRoom({ roomId, name, password, expectKind }) {
     const err = await r.json().catch(() => ({ error: 'Join failed' }));
     throw new Error(err.error || 'Join failed');
   }
-  return r.json();
+  const data = await r.json();
+  if (data?.room?.devices && data.youAre) {
+    const me = data.room.devices.find((d) => d.id === data.youAre);
+    if (me?.name) data.assignedName = me.name;
+  }
+  return data;
+}
+
+// Ask the backend whether the requested display name is already taken in
+// the given room, and what unique alternative to suggest. Used by the
+// lobby UI to live-preview a unique name BEFORE the user clicks Join.
+export async function checkName({ roomId, name }) {
+  try {
+    const r = await fetch('/api/signal/check-name', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roomId, name }),
+    });
+    if (!r.ok) return { taken: false, suggested: name, exists: false };
+    return await r.json();
+  } catch {
+    return { taken: false, suggested: name, exists: false };
+  }
 }

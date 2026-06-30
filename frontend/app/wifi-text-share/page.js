@@ -14,7 +14,7 @@ import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetHeader } from '@/co
 import { Wifi, Plus, LogIn, Copy, QrCode, X, CheckCircle2, Loader2, Users, Lock, Unlock, RefreshCw, RadioTower } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTheme } from 'next-themes';
-import { WebRTCRoom, createRoom, joinRoom } from '@/lib/webrtc-room';
+import { WebRTCRoom, createRoom, joinRoom, checkName } from '@/lib/webrtc-room';
 import { cn } from '@/lib/utils';
 import { useMobileSheet } from '@/hooks/use-mobile-sheet';
 
@@ -184,8 +184,13 @@ function WifiShareInner() {
     try {
       const res = await createRoom({ name: ownName, kind: 'text' });
       if (!res?.room?.id) throw new Error(res?.error || 'Failed to create room');
+      const myName = res.assignedName || ownName;
+      if (res.assignedName && res.assignedName !== ownName) {
+        setName(myName);
+        toast.info(`Display name set to "${myName}"`);
+      }
       setRoom(res.room); setSelfId(res.youAre); setMode('in-room'); setShowQR(true);
-      wireRoom(res.room.id, res.youAre, ownName, res.room.hostId);
+      wireRoom(res.room.id, res.youAre, myName, res.room.hostId);
       toast.success(`Room created: ${res.room.id}`);
     } catch (e) { toast.error(e.message || 'Create failed'); }
   };
@@ -194,8 +199,13 @@ function WifiShareInner() {
       const code = joinCode.trim();
       const res = await joinRoom({ roomId: code, name, expectKind: 'text' });
       if (!res?.room?.id) throw new Error(res?.error || 'Join failed');
+      const myName = res.assignedName || name;
+      if (res.assignedName && res.assignedName !== name) {
+        setName(myName);
+        toast.info(`Name already taken — joined as "${myName}"`);
+      }
       setRoom(res.room); setSelfId(res.youAre); setMode('in-room');
-      wireRoom(res.room.id, res.youAre, name, res.room.hostId);
+      wireRoom(res.room.id, res.youAre, myName, res.room.hostId);
       toast.success(`Joined ${res.room.id}`);
     } catch (e) { toast.error(e.message); }
   };
@@ -284,6 +294,25 @@ function WifiShareInner() {
     return n + (pp?.ready && (pp.dc?.readyState === 'open' || pp.relayMode) ? 1 : 0);
   }, 0);
 
+  // Lobby: live-check that the requested display name isn't taken in the
+  // target room. Debounced to avoid hammering the backend on every keystroke.
+  const [nameHint, setNameHint] = useState(null);
+  useEffect(() => {
+    if (mode !== 'lobby') { setNameHint(null); return; }
+    const code = (joinCode || '').trim();
+    const n = (name || '').trim();
+    if (code.length !== 4 || !n) { setNameHint(null); return; }
+    let alive = true;
+    const t = setTimeout(async () => {
+      const res = await checkName({ roomId: code, name: n });
+      if (!alive) return;
+      if (!res?.exists) { setNameHint(null); return; }
+      if (res.taken) setNameHint({ taken: true, suggested: res.suggested });
+      else setNameHint(null);
+    }, 350);
+    return () => { alive = false; clearTimeout(t); };
+  }, [joinCode, name, mode]);
+
   if (mode === 'lobby' || !room) return (
     <div className="min-h-screen flex items-center justify-center p-6">
       <div className="w-full max-w-3xl">
@@ -316,7 +345,20 @@ function WifiShareInner() {
               </div>
             </div>
             <Label className="text-xs">Display name</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} className="mb-3" />
+            <Input value={name} onChange={(e) => setName(e.target.value)} className={nameHint?.taken ? 'mb-1' : 'mb-3'} />
+            {nameHint?.taken && (
+              <div className="mb-3 flex items-center justify-between gap-2 text-[11px] text-amber-400">
+                <span>That name is already in the room.</span>
+                <button
+                  type="button"
+                  className="font-medium underline underline-offset-2 hover:text-amber-300"
+                  onClick={() => { setName(nameHint.suggested); setNameHint(null); }}
+                  data-testid="wifi-text-share-suggest-name-btn"
+                >
+                  Use &quot;{nameHint.suggested}&quot;
+                </button>
+              </div>
+            )}
             <Label className="text-xs">Room code</Label>
             <Input
               value={joinCode}

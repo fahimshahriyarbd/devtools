@@ -182,6 +182,55 @@ async def signal_create(request: Request) -> Response:
     return _json({"room": serialize_room(room), "youAre": host_id})
 
 
+def _dedupe_name(requested: str, devices: dict, ignore_device_id: str | None = None) -> str:
+    """
+    Ensure the requested name is unique within the room's device list.
+    If the name is already taken, append " (2)", " (3)" etc. until unique.
+    Names are compared case-insensitively. Strips whitespace at the edges
+    so "Alice " and "alice" don't sneak past as duplicates.
+    """
+    base = (requested or "Guest").strip() or "Guest"
+    existing = {
+        str(d.get("name", "")).strip().lower()
+        for did, d in (devices or {}).items()
+        if did != ignore_device_id
+    }
+    if base.lower() not in existing:
+        return base
+    n = 2
+    while True:
+        candidate = f"{base} ({n})"
+        if candidate.lower() not in existing:
+            return candidate
+        n += 1
+        if n > 999:
+            # Pathological case — fall back to a short random suffix.
+            return f"{base}-{uuid.uuid4().hex[:4].upper()}"
+
+
+@app.post("/api/signal/check-name")
+async def signal_check_name(request: Request) -> Response:
+    """
+    Pre-join name suggestion. Frontend calls this once the user has typed a
+    room code so the lobby can show a unique name suggestion BEFORE the user
+    clicks Join. Body: { roomId, name }. Returns:
+      { taken: bool, suggested: str, exists: bool (room exists) }
+    """
+    body: dict[str, Any] = await _read_json(request)
+    raw_id = str(body.get("roomId") or "").strip().upper()
+    requested = str(body.get("name") or "Guest").strip() or "Guest"
+    if not raw_id:
+        return _json({"taken": False, "suggested": requested, "exists": False})
+    room = await rooms_col.find_one({"_id": raw_id})
+    if not room:
+        return _json({"taken": False, "suggested": requested, "exists": False})
+    devices: dict = room.get("devices", {}) or {}
+    existing = {str(d.get("name", "")).strip().lower() for d in devices.values()}
+    taken = requested.lower() in existing
+    suggested = _dedupe_name(requested, devices) if taken else requested
+    return _json({"taken": taken, "suggested": suggested, "exists": True})
+
+
 @app.post("/api/signal/join")
 async def signal_join(request: Request) -> Response:
     body: dict[str, Any] = await _read_json(request)
@@ -209,11 +258,15 @@ async def signal_join(request: Request) -> Response:
         return _json({"error": "Invalid password"}, status=401)
 
     device_id = body.get("deviceId") or str(uuid.uuid4())
-    name = body.get("name") or "Guest"
+    raw_name = body.get("name") or "Guest"
     now = now_ms()
 
     devices: dict = room.get("devices", {}) or {}
     is_new = device_id not in devices
+    # Auto-dedupe the display name so every device in the room has a unique
+    # identifier (case-insensitive). The frontend reads back the assigned
+    # name from the returned room.devices payload.
+    name = _dedupe_name(raw_name, devices, ignore_device_id=device_id)
     devices[device_id] = {
         "id": device_id,
         "name": name,
