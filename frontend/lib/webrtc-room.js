@@ -234,7 +234,7 @@ export class WebRTCRoom {
           }
         }
       } catch (e) { /* swallow */ }
-      await new Promise(r => setTimeout(r, 400));
+      await new Promise(r => setTimeout(r, 250));
     }
   }
 
@@ -573,81 +573,119 @@ export class WebRTCRoom {
     return sent;
   }
 
-  _sendViaRelay(toId, data, attempt = 0) {
-    const isBinary = (typeof data !== 'string');
-    const payload = isBinary ? bufToB64(data) : data;
-    const size = isBinary ? data.byteLength : (data.length || 0);
-    const p = this.peers.get(toId);
-    if (p && attempt === 0) p.relayBufAmt = (p.relayBufAmt || 0) + size;
-    const release = () => {
-      if (p) p.relayBufAmt = Math.max(0, (p.relayBufAmt || 0) - size);
-    };
-    fetch('/api/signal/relay', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        roomId: this.roomId, fromId: this.selfId, toId,
-        data: payload, binary: isBinary,
-      }),
-    }).then((r) => {
-      if (!r.ok && attempt < 3) {
-        // 413 (body too large), 502/503/504 (transient proxy errors), or any
-        // other non-2xx — retry up to 3× with exponential backoff. Some
-        // production proxies / CDNs intermittently reject POSTs under load.
-        setTimeout(() => this._sendViaRelay(toId, data, attempt + 1), 250 * (attempt + 1));
-        return;
+  // ---- relay send infrastructure ---------------------------------------
+  //
+  // CRITICAL: Relay sends to a given peer MUST happen in order. Without
+  // this, fire-and-forget fetch() calls race against each other and the
+  // backend's `messages` array ends up in an order different from what
+  // the sender intended. For the file-share protocol this is fatal:
+  //   - `file-end` can arrive before `file-meta` → receiver drops it →
+  //     file never finalizes on the receiver and never appears in its UI.
+  //   - Binary chunks arrive out of order → the reassembled Blob is
+  //     corrupted.
+  //   - Even text-share `text-update` can show stale text if a later
+  //     update is delivered before an earlier one.
+  //
+  // We therefore maintain one Promise-chain per peer (`p.relayChain`) and
+  // a single global chain for broadcasts (`this.broadcastChain`). Each
+  // _sendViaRelay schedules its fetch onto the appropriate chain so the
+  // POSTs hit the backend strictly in submission order. Awaiting the
+  // response also guarantees that the previous message has been stored
+  // in MongoDB before the next one is sent — eliminating cross-request
+  // race conditions.
+
+  async _doRelayFetch(body, sizeForRelease, p) {
+    let attempt = 0;
+    while (attempt < 4) {
+      try {
+        const r = await fetch('/api/signal/relay', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (r.ok) {
+          if (p) p.relayBufAmt = Math.max(0, (p.relayBufAmt || 0) - sizeForRelease);
+          return true;
+        }
+        log('relay POST non-2xx', r.status, 'attempt', attempt);
+      } catch (e) {
+        log('relay POST network error', e?.message, 'attempt', attempt);
       }
-      release();
-    }, () => {
-      // Network error (offline, DNS, CORS preflight failure). Retry as well.
-      if (attempt < 3) {
-        setTimeout(() => this._sendViaRelay(toId, data, attempt + 1), 250 * (attempt + 1));
-      } else {
-        release();
-      }
-    });
+      attempt++;
+      // Exponential-ish backoff: 250 / 500 / 1000 / 2000 ms
+      await new Promise(res => setTimeout(res, 250 * Math.pow(2, attempt - 1)));
+    }
+    log('relay POST gave up after retries — message lost');
+    if (p) p.relayBufAmt = Math.max(0, (p.relayBufAmt || 0) - sizeForRelease);
+    return false;
   }
 
-  _sendViaRelayBroadcast(data, attempt = 0) {
+  _sendViaRelay(toId, data) {
+    const p = this.peers.get(toId);
+    if (!p) return;
     const isBinary = (typeof data !== 'string');
     const payload = isBinary ? bufToB64(data) : data;
     const size = isBinary ? data.byteLength : (data.length || 0);
-    // Track total in-flight bytes against every relay-mode peer so file-
-    // share backpressure works for broadcast too.
+    p.relayBufAmt = (p.relayBufAmt || 0) + size;
+    const body = {
+      roomId: this.roomId, fromId: this.selfId, toId,
+      data: payload, binary: isBinary,
+    };
+    // Chain THIS send onto the peer's serial queue. The chain swallows
+    // any rejection so a single failed send doesn't permanently break
+    // ordering for subsequent sends.
+    p.relayChain = (p.relayChain || Promise.resolve()).then(
+      () => this._doRelayFetch(body, size, p),
+      () => this._doRelayFetch(body, size, p),
+    );
+  }
+
+  _sendViaRelayBroadcast(data) {
+    const isBinary = (typeof data !== 'string');
+    const payload = isBinary ? bufToB64(data) : data;
+    const size = isBinary ? data.byteLength : (data.length || 0);
+    // Track per-peer in-flight bytes so file-share backpressure works.
     const tracked = [];
-    if (attempt === 0) {
-      for (const [, p] of this.peers) {
-        if (p && (p.relayMode || p.dc?.readyState !== 'open')) {
-          p.relayBufAmt = (p.relayBufAmt || 0) + size;
-          tracked.push(p);
-        }
+    for (const [, p] of this.peers) {
+      if (p && (p.relayMode || p.dc?.readyState !== 'open' || !p.dcVerified)) {
+        p.relayBufAmt = (p.relayBufAmt || 0) + size;
+        tracked.push(p);
       }
     }
+    const body = {
+      roomId: this.roomId, fromId: this.selfId,
+      data: payload, binary: isBinary,
+    };
     const release = () => {
       for (const p of tracked) {
         p.relayBufAmt = Math.max(0, (p.relayBufAmt || 0) - size);
       }
     };
-    fetch('/api/signal/relay', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        roomId: this.roomId, fromId: this.selfId,
-        data: payload, binary: isBinary,
-      }),
-    }).then((r) => {
-      if (!r.ok && attempt < 3) {
-        setTimeout(() => this._sendViaRelayBroadcast(data, attempt + 1), 250 * (attempt + 1));
-        return;
+    // Serialise broadcasts onto a single global chain. The release happens
+    // when the fetch resolves (or after retries are exhausted). We pass
+    // null as the per-peer p so _doRelayFetch doesn't double-decrement.
+    const doFetch = async () => {
+      let attempt = 0;
+      while (attempt < 4) {
+        try {
+          const r = await fetch('/api/signal/relay', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          if (r.ok) { release(); return true; }
+          log('broadcast relay non-2xx', r.status, 'attempt', attempt);
+        } catch (e) {
+          log('broadcast relay network error', e?.message, 'attempt', attempt);
+        }
+        attempt++;
+        await new Promise(res => setTimeout(res, 250 * Math.pow(2, attempt - 1)));
       }
+      log('broadcast relay gave up — message lost');
       release();
-    }, () => {
-      if (attempt < 3) {
-        setTimeout(() => this._sendViaRelayBroadcast(data, attempt + 1), 250 * (attempt + 1));
-      } else {
-        release();
-      }
-    });
+      return false;
+    };
+    this.broadcastChain = (this.broadcastChain || Promise.resolve()).then(doFetch, doFetch);
   }
 
   // Used by the file-share back-pressure throttle. Returns the number of
