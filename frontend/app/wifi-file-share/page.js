@@ -316,11 +316,13 @@ function WifiFileShareInner() {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
       const p = r?.peers.get(peerId);
-      // Peer is usable if its direct data channel is open OR if the room has
+      // Peer is usable if EITHER the direct data channel is open AND has
+      // been verified bidirectional via ping/pong, OR the room has
       // promoted it to relay mode (server-side message relay over polling).
       // The send pipeline in webrtc-room.sendTo() picks the right transport
       // automatically, so callers only need to know the peer is reachable.
-      if (p?.ready && (p.dc?.readyState === 'open' || p.relayMode)) return true;
+      const dcUsable = p?.dc?.readyState === 'open' && p?.dcVerified;
+      if (p?.ready && (dcUsable || p.relayMode)) return true;
       await new Promise(res => setTimeout(res, 200));
     }
     return false;

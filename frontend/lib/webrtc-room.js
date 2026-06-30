@@ -58,11 +58,19 @@ const PC_CONFIG = {
   iceTransportPolicy: 'all',
 };
 
-// How long to wait for the direct data channel before flipping the UI
-// indicator to "ready" via relay. Short so users don't sit watching a
-// spinner — actual data transport (relay) was always available since the
-// peer was tracked.
-const RELAY_UI_DELAY_MS = 3000;
+// How long to wait for the direct data channel to be PROVEN bidirectional
+// (via the ping/pong handshake) before flipping the peer to relay mode so
+// `sendTo` / `broadcast` start using the always-on server-relay path. This
+// is the maximum time the user waits before *something* starts flowing.
+const RELAY_UI_DELAY_MS = 1500;
+
+// After dc.onopen fires we send an internal `__rtc-ping` message and wait
+// for a `__rtc-pong` reply. If we don't see the pong within this window,
+// we treat the data channel as broken (false-open) and switch to relay.
+// This is the critical fix for the cross-device-on-same-LAN failure mode
+// where mDNS host candidates make ICE think it's connected but no actual
+// data flows over the underlying transport.
+const DC_VERIFY_TIMEOUT_MS = 2500;
 
 const DBG = true;
 const log = (...a) => { if (DBG) try { console.log('[rtc]', ...a); } catch {} };
@@ -145,8 +153,8 @@ export class WebRTCRoom {
   async refreshConnections({ silent = false } = {}) {
     const results = { healed: 0, restarted: 0, recreated: 0, promoted: 0 };
     for (const [peerId, p] of this.peers) {
-      const dcOpen = p.dc?.readyState === 'open';
-      if (dcOpen) {
+      const dcUsable = p.dc?.readyState === 'open' && p.dcVerified;
+      if (dcUsable) {
         results.healed++;
         continue;
       }
@@ -157,7 +165,8 @@ export class WebRTCRoom {
         const pcDead =
           !p.pc ||
           ['failed', 'disconnected', 'closed'].includes(p.pc?.connectionState) ||
-          ['failed', 'disconnected', 'closed'].includes(p.pc?.iceConnectionState);
+          ['failed', 'disconnected', 'closed'].includes(p.pc?.iceConnectionState) ||
+          p.dcBroken;
 
         if (!p.pc) {
           await this._ensurePeerConnection(peerId, true).catch(() => {});
@@ -165,10 +174,13 @@ export class WebRTCRoom {
         } else if (pcDead) {
           try { p.dc?.close(); } catch {}
           try { p.pc?.close(); } catch {}
+          if (p.pingTimer) { clearTimeout(p.pingTimer); p.pingTimer = null; }
           p.pc = null;
           p.dc = null;
           p.remoteSet = false;
           p.pendingIce = [];
+          p.dcVerified = false;
+          p.dcBroken = false;
           await this._ensurePeerConnection(peerId, true).catch(() => {});
           results.recreated++;
         } else {
@@ -269,18 +281,28 @@ export class WebRTCRoom {
       remoteSet: false,
       relayMode: false,
       relayTimer: null,
+      // dcVerified gates whether we trust the direct data-channel path.
+      // Set true only after a ping/pong round-trip over the channel —
+      // dc.readyState='open' alone is NOT enough because ICE can claim
+      // "connected" via mDNS host candidates when actual data does not
+      // flow (the cross-device-same-LAN failure mode).
+      dcVerified: false,
+      dcBroken: false,
+      pingId: null,
+      pingTimer: null,
     };
     this.peers.set(peerId, entry);
 
-    // UI-promotion timer: even if WebRTC isn't ready yet, mark the peer as
-    // ready (using relay transport) so the participant indicator turns
-    // green. Application sendTo/broadcast already use relay transparently.
+    // UI-promotion timer: if the direct DC isn't verified within
+    // RELAY_UI_DELAY_MS, engage relay mode so sendTo/broadcast start
+    // flowing immediately via the always-on /api/signal/relay path.
     entry.relayTimer = setTimeout(() => {
       const p = this.peers.get(peerId);
       if (!p) return;
-      if (p.dc?.readyState === 'open') return;
+      // Skip relay only if dc is OPEN *and* verified.
+      if (p.dc?.readyState === 'open' && p.dcVerified) return;
       if (!p.relayMode) {
-        log('peer', peerId, 'promoted to relay mode after', RELAY_UI_DELAY_MS, 'ms');
+        log('peer', peerId, 'promoted to relay mode after', RELAY_UI_DELAY_MS, 'ms (dc unverified)');
         p.relayMode = true;
         p.ready = true;
         this.onConnState();
@@ -347,16 +369,42 @@ export class WebRTCRoom {
     dc.binaryType = 'arraybuffer';
     dc.onopen = () => {
       const p = this.peers.get(peerId);
-      if (p) {
-        p.ready = true;
-        p.relayMode = false; // direct beats relay
-        log('peer', peerId, 'DATA CHANNEL OPEN ✓');
-      }
+      if (!p) return;
+      log('peer', peerId, 'DATA CHANNEL OPEN (verifying with ping…)');
+      // Send a verification ping. The data channel is NOT trusted for
+      // application traffic until the peer replies with a matching pong.
+      // This guards against the cross-device-same-LAN failure mode where
+      // ICE reports "connected" via mDNS host candidates but no data
+      // actually flows over the underlying SCTP transport.
+      const pingId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random()}`;
+      p.pingId = pingId;
+      p.pingSentAt = Date.now();
+      try {
+        dc.send(JSON.stringify({ __rtc: 'ping', id: pingId }));
+      } catch (e) { log('peer', peerId, 'failed to send ping', e); }
+
+      if (p.pingTimer) clearTimeout(p.pingTimer);
+      p.pingTimer = setTimeout(() => {
+        const pp = this.peers.get(peerId);
+        if (!pp || pp.dcVerified) return;
+        log('peer', peerId, 'DC VERIFICATION TIMEOUT — switching to relay');
+        pp.dcBroken = true;
+        pp.relayMode = true;
+        pp.ready = true;
+        // Close the unreliable dc so dc.readyState !== 'open' on next send
+        try { pp.dc?.close(); } catch {}
+        this.onConnState();
+      }, DC_VERIFY_TIMEOUT_MS);
+
       this.onConnState();
     };
     dc.onclose = () => {
       const p = this.peers.get(peerId);
       if (p) {
+        p.dcVerified = false;
+        if (p.pingTimer) { clearTimeout(p.pingTimer); p.pingTimer = null; }
         // Fall back to relay if dc closes but peer is still in the room
         p.relayMode = this.peers.has(peerId);
         p.ready = p.relayMode;
@@ -367,13 +415,52 @@ export class WebRTCRoom {
       log('peer', peerId, 'dc.onerror', e);
       const p = this.peers.get(peerId);
       if (p) {
+        p.dcVerified = false;
+        if (p.pingTimer) { clearTimeout(p.pingTimer); p.pingTimer = null; }
         p.relayMode = this.peers.has(peerId);
         p.ready = p.relayMode;
       }
       this.onConnState();
     };
     dc.onmessage = (e) => {
-      this.onMessage(peerId, e.data);
+      const data = e.data;
+      // Intercept internal handshake ping/pong messages BEFORE forwarding
+      // anything to the application layer.
+      if (typeof data === 'string' && data.length < 200 && data[0] === '{') {
+        let m = null;
+        try { m = JSON.parse(data); } catch { /* not JSON, fall through */ }
+        if (m && m.__rtc === 'ping') {
+          // Echo the ping back as a pong; also mark our side as verified
+          // since clearly bytes are flowing in this direction.
+          try { dc.send(JSON.stringify({ __rtc: 'pong', id: m.id })); } catch {}
+          const p = this.peers.get(peerId);
+          if (p) {
+            p.dcVerified = true;
+            p.dcBroken = false;
+            p.relayMode = false;
+            p.ready = true;
+            if (p.pingTimer) { clearTimeout(p.pingTimer); p.pingTimer = null; }
+            log('peer', peerId, 'DC VERIFIED (incoming ping → pong sent)');
+            this.onConnState();
+          }
+          return;
+        }
+        if (m && m.__rtc === 'pong') {
+          const p = this.peers.get(peerId);
+          if (p && m.id === p.pingId) {
+            p.dcVerified = true;
+            p.dcBroken = false;
+            p.relayMode = false;
+            p.ready = true;
+            if (p.pingTimer) { clearTimeout(p.pingTimer); p.pingTimer = null; }
+            const rtt = Date.now() - (p.pingSentAt || Date.now());
+            log('peer', peerId, `DC VERIFIED (pong received, rtt=${rtt}ms)`);
+            this.onConnState();
+          }
+          return;
+        }
+      }
+      this.onMessage(peerId, data);
     };
   }
 
@@ -450,7 +537,11 @@ export class WebRTCRoom {
       // the server doesn't know about.
       return false;
     }
-    if (p.dc?.readyState === 'open') {
+    // Trust the direct DC ONLY after the ping/pong handshake has verified
+    // it's actually bidirectional. Otherwise (open-but-unverified, or
+    // broken) fall through to relay so cross-device-LAN scenarios where
+    // ICE reports a false "connected" still deliver messages.
+    if (p.dc?.readyState === 'open' && p.dcVerified) {
       try {
         p.dc.send(data);
         return true;
@@ -467,7 +558,7 @@ export class WebRTCRoom {
     let sent = 0;
     const relayTargets = [];
     for (const [pid, p] of this.peers) {
-      if (p.dc?.readyState === 'open') {
+      if (p.dc?.readyState === 'open' && p.dcVerified) {
         try { p.dc.send(data); sent++; continue; } catch {}
       }
       relayTargets.push(pid);
@@ -567,7 +658,7 @@ export class WebRTCRoom {
   bufferedAmount(peerId) {
     const p = this.peers.get(peerId);
     if (!p) return 0;
-    if (p.dc && p.dc.readyState === 'open') return p.dc.bufferedAmount ?? 0;
+    if (p.dc && p.dc.readyState === 'open' && p.dcVerified) return p.dc.bufferedAmount ?? 0;
     return p.relayBufAmt || 0;
   }
 }

@@ -87,7 +87,8 @@ function WifiShareInner() {
     const sendSnapshotTo = (peerId) => {
       const rtc = rtcRef.current;
       const peer = rtc?.peers.get(peerId);
-      if (!peer?.ready || (peer.dc?.readyState !== 'open' && !peer.relayMode)) return false;
+      const dcUsable = peer?.dc?.readyState === 'open' && peer?.dcVerified;
+      if (!peer?.ready || (!dcUsable && !peer.relayMode)) return false;
       const snap = JSON.stringify({
         kind: 'snapshot',
         text: textRef.current,
@@ -128,7 +129,8 @@ function WifiShareInner() {
         const rtc = rtcRef.current;
         if (!rtc) return;
         for (const [peerId, peer] of rtc.peers) {
-          if (peer?.ready && (peer.dc?.readyState === 'open' || peer.relayMode) && !snapshotSent.has(peerId)) {
+          const dcUsable = peer?.dc?.readyState === 'open' && peer?.dcVerified;
+          if (peer?.ready && (dcUsable || peer.relayMode) && !snapshotSent.has(peerId)) {
             sendSnapshotTo(peerId);
           }
         }
@@ -279,7 +281,8 @@ function WifiShareInner() {
     });
     let sent = 0;
     for (const [pid, peer] of rtc.peers) {
-      if (peer?.ready && (peer.dc?.readyState === 'open' || peer.relayMode)) {
+      const dcUsable = peer?.dc?.readyState === 'open' && peer?.dcVerified;
+      if (peer?.ready && (dcUsable || peer.relayMode)) {
         if (rtc.sendTo(pid, snap)) sent++;
       }
     }
@@ -291,7 +294,8 @@ function WifiShareInner() {
   // live vs. a peer is connected-but-not-ready.
   const readyPeerCount = peers.reduce((n, p) => {
     const pp = rtcRef.current?.peers.get(p.id);
-    return n + (pp?.ready && (pp.dc?.readyState === 'open' || pp.relayMode) ? 1 : 0);
+    const dcUsable = pp?.dc?.readyState === 'open' && pp?.dcVerified;
+    return n + (pp?.ready && (dcUsable || pp.relayMode) ? 1 : 0);
   }, 0);
 
   // Lobby: live-check that the requested display name isn't taken in the
