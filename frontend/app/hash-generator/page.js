@@ -20,7 +20,7 @@ import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetHeader } from '@/co
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { HASH_ALGORITHMS, computeAll, hashFile, compareHashes } from '@/lib/hash-utils';
-import { bcryptHash, bcryptVerify, wpPhpassHash, wpPhpassVerify } from '@/lib/password-hash';
+import { bcryptHash, bcryptVerify, wpPhpassHash, wpPhpassVerify, wpBcryptHash, wpBcryptVerify } from '@/lib/password-hash';
 import { Slider } from '@/components/ui/slider';
 import { useHashStore } from '@/lib/stores';
 import { useMobileSheet } from '@/hooks/use-mobile-sheet';
@@ -131,7 +131,7 @@ export default function HashGeneratorPage() {
   // Password algos live in a separate pane — never load them into the
   // plain-text tab or their salt / cost parameters are silently dropped
   // and the user just sees their password sitting in a diff textbox.
-  const isPasswordAlgo = (algo) => algo === 'bcrypt' || algo === 'phpass' || algo === 'wp-phpass';
+  const isPasswordAlgo = (algo) => algo === 'bcrypt' || algo === 'phpass' || algo === 'wp-phpass' || algo === 'wp-bcrypt';
 
   // Load a Recent entry — routes bcrypt / phpass items to the Password
   // tab and hands the raw password + algo down to PasswordHashView.
@@ -864,6 +864,8 @@ function PasswordHashView({ autoCompute = false, addHistory, pendingLoad, onPend
   const [bcryptRounds, setBcryptRounds] = useState(10);
   const [phpassLog2, setPhpassLog2] = useState(13);
   const [phpassPrefix, setPhpassPrefix] = useState('$P$');
+  // WordPress 6.8+ uses bcrypt cost 12 by default and prepends "$wp".
+  const [wpBcryptRounds, setWpBcryptRounds] = useState(12);
   const [output, setOutput] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -875,8 +877,10 @@ function PasswordHashView({ autoCompute = false, addHistory, pendingLoad, onPend
   useEffect(() => {
     if (!pendingLoad || pendingLoad.token === lastLoadTokenRef.current) return;
     lastLoadTokenRef.current = pendingLoad.token;
-    if (pendingLoad.algo === 'bcrypt' || pendingLoad.algo === 'phpass') {
-      setAlgo(pendingLoad.algo);
+    if (pendingLoad.algo === 'bcrypt' || pendingLoad.algo === 'phpass' || pendingLoad.algo === 'wp-phpass' || pendingLoad.algo === 'wp-bcrypt') {
+      // Normalise legacy value 'phpass' → 'wp-phpass' for the state.
+      const normalised = pendingLoad.algo === 'phpass' ? 'wp-phpass' : pendingLoad.algo;
+      setAlgo(normalised);
     }
     setPassword(pendingLoad.password ?? '');
     // Clear any stale previous output so the user isn't left staring at a
@@ -902,6 +906,8 @@ function PasswordHashView({ autoCompute = false, addHistory, pendingLoad, onPend
       let res;
       if (algo === 'bcrypt') {
         res = await bcryptHash(password, bcryptRounds);
+      } else if (algo === 'wp-bcrypt') {
+        res = await wpBcryptHash(password, wpBcryptRounds);
       } else {
         res = await wpPhpassHash(password, phpassLog2, phpassPrefix);
       }
@@ -911,7 +917,11 @@ function PasswordHashView({ autoCompute = false, addHistory, pendingLoad, onPend
       // reflects every hash the user generates — bcrypt/phpass hashes
       // used to be invisible there because they had their own pane.
       if (typeof addHistory === 'function') {
-        const label = res.algorithm === 'bcrypt' ? 'bcrypt' : 'phpass';
+        const label = res.algorithm === 'bcrypt'
+          ? 'bcrypt'
+          : res.algorithm === 'wp-bcrypt'
+            ? 'wp-bcrypt'
+            : 'phpass';
         addHistory([{
           id: crypto.randomUUID(),
           time: Date.now(),
@@ -923,7 +933,11 @@ function PasswordHashView({ autoCompute = false, addHistory, pendingLoad, onPend
           source: 'password',
         }]);
       }
-      const toastLabel = algo === 'bcrypt' ? 'bcrypt' : 'WordPress phpass';
+      const toastLabel = algo === 'bcrypt'
+        ? 'bcrypt'
+        : algo === 'wp-bcrypt'
+          ? 'WordPress 6.8+ ($wp$)'
+          : 'WordPress phpass';
       const suffix = password ? '' : ' (empty string)';
       toast.success(`${toastLabel} hash${suffix} generated in ${Math.round(t1 - t0)} ms`);
     } catch (e) {
@@ -931,7 +945,7 @@ function PasswordHashView({ autoCompute = false, addHistory, pendingLoad, onPend
     } finally {
       setBusy(false);
     }
-  }, [algo, password, bcryptRounds, phpassLog2, phpassPrefix, addHistory]);
+  }, [algo, password, bcryptRounds, phpassLog2, phpassPrefix, wpBcryptRounds, addHistory]);
 
   // Auto-generate on any parameter change when the shared Auto toggle is
   // on. Debounced 500 ms because bcrypt / phpass with a high cost can be
@@ -953,11 +967,17 @@ function PasswordHashView({ autoCompute = false, addHistory, pendingLoad, onPend
       try {
         const res = algo === 'bcrypt'
           ? await bcryptHash(password, bcryptRounds)
-          : await wpPhpassHash(password, phpassLog2, phpassPrefix);
+          : algo === 'wp-bcrypt'
+            ? await wpBcryptHash(password, wpBcryptRounds)
+            : await wpPhpassHash(password, phpassLog2, phpassPrefix);
         const t1 = performance.now();
         setOutput({ ...res, ms: Math.round(t1 - t0) });
         if (typeof addHistory === 'function') {
-          const label = res.algorithm === 'bcrypt' ? 'bcrypt' : 'phpass';
+          const label = res.algorithm === 'bcrypt'
+            ? 'bcrypt'
+            : res.algorithm === 'wp-bcrypt'
+              ? 'wp-bcrypt'
+              : 'phpass';
           addHistory([{
             id: crypto.randomUUID(),
             time: Date.now(),
@@ -977,7 +997,7 @@ function PasswordHashView({ autoCompute = false, addHistory, pendingLoad, onPend
       }
     }, 500);
     return () => { if (autoDebounceRef.current) clearTimeout(autoDebounceRef.current); };
-  }, [autoCompute, algo, password, bcryptRounds, phpassLog2, phpassPrefix, addHistory]);
+  }, [autoCompute, algo, password, bcryptRounds, phpassLog2, phpassPrefix, wpBcryptRounds, addHistory]);
 
   const verify = useCallback(async () => {
     if (!verifyPassword || !verifyHash) { toast.error('Enter a password and a hash'); return; }
@@ -985,13 +1005,16 @@ function PasswordHashView({ autoCompute = false, addHistory, pendingLoad, onPend
     const t0 = performance.now();
     try {
       let ok = false;
+      const trimmed = verifyHash.trim();
       // Auto-detect format from the prefix so users can paste either kind.
-      if (verifyHash.startsWith('$P$') || verifyHash.startsWith('$H$')) {
-        ok = await wpPhpassVerify(verifyPassword, verifyHash.trim());
-      } else if (verifyHash.startsWith('$2')) {
-        ok = await bcryptVerify(verifyPassword, verifyHash.trim());
+      if (trimmed.startsWith('$wp$')) {
+        ok = await wpBcryptVerify(verifyPassword, trimmed);
+      } else if (trimmed.startsWith('$P$') || trimmed.startsWith('$H$')) {
+        ok = await wpPhpassVerify(verifyPassword, trimmed);
+      } else if (trimmed.startsWith('$2')) {
+        ok = await bcryptVerify(verifyPassword, trimmed);
       } else {
-        toast.error('Unrecognised hash format. Expected $2a/$2b/$2y (bcrypt) or $P$/$H$ (WordPress).');
+        toast.error('Unrecognised hash format. Expected $wp$2y$ (WordPress 6.8+), $2a/$2b/$2y (bcrypt) or $P$/$H$ (WordPress phpass).');
         setVerifyBusy(false);
         return;
       }
@@ -1018,7 +1041,7 @@ function PasswordHashView({ autoCompute = false, addHistory, pendingLoad, onPend
 
         <div>
           <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">Algorithm</Label>
-          <div className="mt-1.5 grid grid-cols-2 gap-2">
+          <div className="mt-1.5 grid grid-cols-1 sm:grid-cols-3 gap-2">
             <button
               type="button"
               onClick={() => setAlgo('bcrypt')}
@@ -1033,6 +1056,18 @@ function PasswordHashView({ autoCompute = false, addHistory, pendingLoad, onPend
             </button>
             <button
               type="button"
+              onClick={() => setAlgo('wp-bcrypt')}
+              className={cn('rounded-lg border px-3 py-2.5 text-left transition',
+                algo === 'wp-bcrypt'
+                  ? 'border-violet-400/60 bg-violet-500/15'
+                  : 'border-border/60 hover:border-foreground/25')}
+              data-testid="pw-hash-algo-wp-bcrypt"
+            >
+              <div className="text-sm font-medium">WordPress 6.8+</div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">HMAC-SHA-384 + bcrypt · $wp$</div>
+            </button>
+            <button
+              type="button"
               onClick={() => setAlgo('wp-phpass')}
               className={cn('rounded-lg border px-3 py-2.5 text-left transition',
                 algo === 'wp-phpass'
@@ -1040,7 +1075,7 @@ function PasswordHashView({ autoCompute = false, addHistory, pendingLoad, onPend
                   : 'border-border/60 hover:border-foreground/25')}
               data-testid="pw-hash-algo-wp"
             >
-              <div className="text-sm font-medium">WordPress phpass</div>
+              <div className="text-sm font-medium">WP phpass (legacy)</div>
               <div className="text-[10px] text-muted-foreground mt-0.5">PortableHash · $P$ / $H$</div>
             </button>
           </div>
@@ -1086,6 +1121,24 @@ function PasswordHashView({ autoCompute = false, addHistory, pendingLoad, onPend
             />
             <div className="mt-1 text-[10px] text-muted-foreground">
               10 is the modern default. Each +1 doubles the work — use 12+ for high-value credentials.
+            </div>
+          </div>
+        ) : algo === 'wp-bcrypt' ? (
+          <div>
+            <div className="flex items-center justify-between">
+              <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">Cost (rounds)</Label>
+              <span className="text-xs font-mono text-muted-foreground">
+                {wpBcryptRounds}  <span className="opacity-60">· 2^{wpBcryptRounds} = {Math.pow(2, wpBcryptRounds).toLocaleString()} iters</span>
+              </span>
+            </div>
+            <Slider
+              value={[wpBcryptRounds]}
+              onValueChange={([v]) => setWpBcryptRounds(v)}
+              min={4} max={15} step={1}
+              className="mt-2.5"
+            />
+            <div className="mt-1 text-[10px] text-muted-foreground">
+              WordPress 6.8+ pre-hashes the password with HMAC-SHA-384 (key <span className="font-mono">wp-sha384</span>), base64-encodes it, then bcrypts it (default cost 12) and prepends <span className="font-mono">$wp$</span>.
             </div>
           </div>
         ) : (
@@ -1146,7 +1199,11 @@ function PasswordHashView({ autoCompute = false, addHistory, pendingLoad, onPend
           >
             <div className="flex items-center justify-between mb-2">
               <div className="text-[10px] uppercase tracking-wider text-emerald-300 font-medium">
-                {output.algorithm === 'bcrypt' ? `bcrypt · cost ${output.rounds}` : `WP phpass · ${output.iterations.toLocaleString()} iters`}
+                {output.algorithm === 'bcrypt'
+                  ? `bcrypt · cost ${output.rounds}`
+                  : output.algorithm === 'wp-bcrypt'
+                    ? `WP 6.8+ ($wp$) · cost ${output.rounds}`
+                    : `WP phpass · ${output.iterations.toLocaleString()} iters`}
                 <span className="ml-2 text-muted-foreground normal-case tracking-normal">· {output.ms} ms</span>
               </div>
               <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={copyHash} data-testid="pw-hash-copy-btn">
@@ -1192,12 +1249,12 @@ function PasswordHashView({ autoCompute = false, addHistory, pendingLoad, onPend
           <Textarea
             value={verifyHash}
             onChange={(e) => setVerifyHash(e.target.value)}
-            placeholder="Paste a $2b$… bcrypt or $P$… / $H$… phpass hash"
+            placeholder="Paste a $wp$2y$… (WP 6.8+), $2b$… bcrypt or $P$… / $H$… phpass hash"
             className="font-mono text-xs mt-1.5 min-h-[90px]"
             data-testid="pw-verify-hash-input"
           />
           <div className="text-[10px] text-muted-foreground mt-1">
-            Auto-detects format: <span className="font-mono">$2a/$2b/$2y</span> (bcrypt) or <span className="font-mono">$P$/$H$</span> (WordPress).
+            Auto-detects format: <span className="font-mono">$wp$2y$</span> (WordPress 6.8+), <span className="font-mono">$2a/$2b/$2y</span> (bcrypt) or <span className="font-mono">$P$/$H$</span> (WordPress phpass).
           </div>
         </div>
         <div className="flex items-center gap-2">

@@ -172,3 +172,74 @@ export async function wpPhpassVerify(password, stored) {
   }
   return diff === 0;
 }
+
+// ----- WordPress 6.8+ bcrypt ($wp$) ---------------------------------------
+//
+// From WordPress core (wp-includes/pluggable.php, wp_hash_password):
+//
+//   $password_to_hash = base64_encode(
+//       hash_hmac( 'sha384', trim( $password ), 'wp-sha384', true )
+//   );
+//   return '$wp' . password_hash( $password_to_hash, PASSWORD_BCRYPT );
+//
+// So a stored WordPress 6.8+ hash looks like  "$wp$2y$10$...."  — a normal
+// bcrypt hash with an extra "$wp" tag prepended. The pre-hash step is
+// there to (a) work around bcrypt's 72-byte input limit for very long
+// passwords and (b) provide domain separation via the fixed HMAC key
+// "wp-sha384".
+
+/**
+ * Compute WordPress's HMAC-SHA-384 pre-hash of a password and return
+ * the base64-encoded digest that will be fed into bcrypt.
+ * @param {string} password
+ * @returns {Promise<string>}
+ */
+async function wpPreHash(password) {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw',
+    enc.encode('wp-sha384'),
+    { name: 'HMAC', hash: 'SHA-384' },
+    false,
+    ['sign'],
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(password.trim()));
+  // Base64 encode the raw 48-byte digest to a standard base64 string.
+  const bytes = new Uint8Array(sig);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+
+/**
+ * Compute a WordPress 6.8+ ($wp$) password hash.
+ * @param {string} password
+ * @param {number} rounds bcrypt cost parameter (4..15). WordPress core
+ *   uses 12 by default; we default to 12 here as well to match.
+ * @returns {Promise<{hash: string, algorithm: 'wp-bcrypt', rounds: number}>}
+ */
+export async function wpBcryptHash(password, rounds = 12) {
+  const r = Math.max(4, Math.min(15, Number(rounds) || 12));
+  const prehashed = await wpPreHash(password);
+  const salt = await bcrypt.genSalt(r);
+  const bcryptHash = await bcrypt.hash(prehashed, salt);
+  return { hash: '$wp' + bcryptHash, algorithm: 'wp-bcrypt', rounds: r };
+}
+
+/**
+ * Verify a plaintext password against a WordPress 6.8+ ($wp$…) hash.
+ * @param {string} password
+ * @param {string} stored e.g. "$wp$2y$12$....."
+ * @returns {Promise<boolean>}
+ */
+export async function wpBcryptVerify(password, stored) {
+  if (!stored || !stored.startsWith('$wp$')) return false;
+  const bcryptPart = stored.slice(3); // strip leading "$wp", leaves "$2y$..."
+  if (!/^\$2[aby]\$/.test(bcryptPart)) return false;
+  try {
+    const prehashed = await wpPreHash(password);
+    return await bcrypt.compare(prehashed, bcryptPart);
+  } catch {
+    return false;
+  }
+}
