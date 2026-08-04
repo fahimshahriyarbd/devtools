@@ -35,11 +35,11 @@ export function newRequest(overrides = {}) {
   };
 }
 
-function newTab(request) {
+function newTab(request, title) {
   const req = request || newRequest();
   return {
     id: crypto.randomUUID(),
-    title: 'Untitled Request',
+    title: title || 'Tab 1',
     request: req,
     response: null,
     // Independent per-tab UI state (which sub-tab is active in the
@@ -53,6 +53,25 @@ function newTab(request) {
   };
 }
 
+/**
+ * Compute the next default tab name given the current tab list. Scans
+ * every existing title for a "Tab <n>" pattern, takes the max n and
+ * returns "Tab <n+1>". If no tab currently has a "Tab N" name, returns
+ * "Tab 1" — this way users always see a sensible sequential label.
+ */
+function nextTabTitle(tabs) {
+  let max = 0;
+  const re = /^\s*Tab\s+(\d+)\s*$/i;
+  for (const t of tabs || []) {
+    const m = re.exec(String(t?.title || ''));
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (Number.isFinite(n) && n > max) max = n;
+    }
+  }
+  return `Tab ${max + 1}`;
+}
+
 const LS_KEY = 'devhub_api_client_v1';
 
 export const useApiClientStore = create(
@@ -62,14 +81,21 @@ export const useApiClientStore = create(
       tabs: [newTab()],
       activeTabId: null, // resolved lazily below
       addTab: (request) => set((s) => {
-        const t = newTab(request ? { ...request, id: crypto.randomUUID() } : undefined);
+        // If a request payload is provided (e.g. opening a saved request
+        // from the sidebar) prefer its own name; otherwise auto-name the
+        // tab "Tab N" where N is one greater than the max existing N.
+        const autoTitle = nextTabTitle(s.tabs);
+        const title = request?.name || autoTitle;
+        const t = newTab(
+          request ? { ...request, id: crypto.randomUUID() } : undefined,
+          title,
+        );
         return { tabs: [...s.tabs, t], activeTabId: t.id };
       }),
       duplicateTab: (id) => set((s) => {
         const src = s.tabs.find((t) => t.id === id);
         if (!src) return {};
-        const t = newTab({ ...src.request, id: crypto.randomUUID() });
-        t.title = `${src.title} (copy)`;
+        const t = newTab({ ...src.request, id: crypto.randomUUID() }, `${src.title} (copy)`);
         const idx = s.tabs.findIndex((x) => x.id === id);
         const tabs = [...s.tabs.slice(0, idx + 1), t, ...s.tabs.slice(idx + 1)];
         return { tabs, activeTabId: t.id };
@@ -77,7 +103,7 @@ export const useApiClientStore = create(
       closeTab: (id) => set((s) => {
         const tabs = s.tabs.filter((t) => t.id !== id);
         if (tabs.length === 0) {
-          const fresh = newTab();
+          const fresh = newTab(undefined, 'Tab 1');
           return { tabs: [fresh], activeTabId: fresh.id };
         }
         let activeTabId = s.activeTabId;
@@ -244,7 +270,7 @@ export const useApiClientStore = create(
       restoreAll: (payload) => set(() => {
         const p = payload || {};
         return {
-          tabs: (p.tabs && p.tabs.length ? p.tabs : [newTab()]),
+          tabs: (p.tabs && p.tabs.length ? p.tabs : [newTab(undefined, 'Tab 1')]),
           activeTabId: p.activeTabId ?? null,
           collections: p.collections || [],
           history: p.history || [],
@@ -267,7 +293,7 @@ export const useApiClientStore = create(
       }),
       onRehydrateStorage: () => (state) => {
         if (!state) return;
-        if (!state.tabs || state.tabs.length === 0) state.tabs = [newTab()];
+        if (!state.tabs || state.tabs.length === 0) state.tabs = [newTab(undefined, 'Tab 1')];
         if (!state.activeTabId || !state.tabs.some((t) => t.id === state.activeTabId)) {
           state.activeTabId = state.tabs[0].id;
         }
