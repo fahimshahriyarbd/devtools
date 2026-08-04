@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from '@/components/ui/dialog';
@@ -154,19 +154,20 @@ export function CodeGeneratorDialog({ open, onOpenChange, request, env }) {
   const code = gen ? gen.run(request, env) : '';
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-w-3xl overflow-hidden">
         <DialogHeader>
           <DialogTitle>Code snippet</DialogTitle>
           <DialogDescription>Copy a ready-to-run snippet for your favourite HTTP client.</DialogDescription>
         </DialogHeader>
-        <Tabs value={choice} onValueChange={setChoice}>
+        <Tabs value={choice} onValueChange={setChoice} className="min-w-0">
           <TabsList className="flex-wrap h-auto">
             {GENERATORS.map((g) => <TabsTrigger key={g.id} value={g.id} className="text-xs" data-testid={`codegen-${g.id}`}>{g.label}</TabsTrigger>)}
           </TabsList>
         </Tabs>
-        <div className="mt-3">
-          <ScrollArea className="h-[340px] rounded-md border border-border/60 bg-muted/30 p-3">
+        <div className="mt-3 w-full min-w-0 max-w-full overflow-hidden">
+          <ScrollArea className="h-[340px] w-full max-w-full rounded-md border border-border/60 bg-muted/30 p-3">
             <pre className="text-[12px] font-mono whitespace-pre" data-testid="codegen-output">{code}</pre>
+            <ScrollBar orientation="horizontal" />
           </ScrollArea>
         </div>
         <DialogFooter>
